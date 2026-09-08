@@ -898,8 +898,15 @@ function DashboardPage({ user, setUser }) {
             <h3 style={{ margin: 0, fontSize: '24px', letterSpacing: '3px' }}>
               {user.lives !== undefined ? (
                 <>
-                  {'❤️'.repeat(user.lives)}
-                  {'🤍'.repeat(4 - user.lives)}
+                  {(() => {
+                      const lives = Math.max(0, Math.min(4, Number(user.lives) || 0));
+                      return (
+                          <>
+                              {'❤️'.repeat(lives)}
+                              {'🤍'.repeat(4 - lives)}
+                          </>
+                      );
+                  })()}
                 </>
               ) : '❤️❤️❤️❤️'}
             </h3>

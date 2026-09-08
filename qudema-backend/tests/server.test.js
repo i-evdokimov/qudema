@@ -1,4 +1,3 @@
-const request = require('supertest');
 const { app, pool } = require('../server'); // Импортируем наше приложение и пул БД
 
 // Изолируем внешние вызовы API Telegram и Почты во время тестов

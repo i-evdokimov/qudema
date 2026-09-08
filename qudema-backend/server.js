@@ -62,7 +62,9 @@ pool.connect()
 // БОТ
 const bot = new BotConstructor(process.env.BOT_TOKEN, { polling: true });
 
-bot.on('polling_error', (error) => {});
+bot.on('polling_error', (error) => {
+    console.error('❌ TELEGRAM POLLING ERROR:', error.message);
+});
 
 // меню бота
 const getMainMenu = (lives) => {
