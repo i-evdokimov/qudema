@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import LandingPage from './LandingPage.jsx';
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate, useParams} from 'react-router-dom';
@@ -31,115 +32,6 @@ axios.interceptors.response.use(
         return Promise.reject(error);
     }
 );
-
-// ЛЕНДИНГ
-function LandingPage({ user }) {
-  const fadeInUp = {
-    hidden: { opacity: 0, y: 40 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: "easeOut" } }
-  };
-
-  return (
-    <div className="landing-container">
-      <motion.header 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '80px' }}
-      >
-        <h2 style={{ margin: 0, fontSize: '40px', letterSpacing: '6px', fontWeight: '1000' }} className="text-gradient">
-          QUDEMA
-        </h2>
-        {user ? (
-          <Link to="/dashboard"><button className="btn btn-success" style={{ padding: '10px 25px', fontSize: '15px' }}>Кабинет: {user.first_name} 🎓</button></Link>
-        ) : (
-          <Link to="/login"><button className="btn btn-primary">Личный кабинет 🔑</button></Link>
-        )}
-      </motion.header>
-
-      <motion.section 
-        variants={fadeInUp} initial="hidden" animate="visible"
-        style={{ marginBottom: '100px', textAlign: 'center' }}
-      >
-        <h1 style={{ fontSize: '80px', marginBottom: '20px', lineHeight: '1.2', fontWeight: '800', color: '#fff' }}>
-          Образовательный центр <br/><span className="text-gradient">нового поколения</span>
-        </h1>
-        <p style={{ fontSize: '20px', color: '#8b949e', maxWidth: '750px', margin: '0 auto 40px', lineHeight: '1.6' }}>
-          Лицензированные программы обучения для школьников и взрослых. Профессиональный подход, сильные наставники и прозрачный контроль успеваемости.
-        </p>
-        
-        {user ? (
-          <Link to="/dashboard"><button className="btn btn-success">Перейти к занятиям 🚀</button></Link>
-        ) : (
-          <Link to="/login"><button className="btn btn-success">Войти в систему 🚀</button></Link>
-        )}
-      </motion.section>
-
-      <motion.section 
-        variants={fadeInUp} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.2 }}
-        style={{ marginBottom: '100px' }}
-      >
-        <h2 style={{ fontSize: '32px', marginBottom: '40px', color: '#fff', textAlign: 'center' }}>Наши программы обучения</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '30px' }}>
-          
-          <div className="glass-card">
-            <span className="badge badge-blue">ШКОЛЬНИКАМ 7-11 КЛАССОВ</span>
-            <h3 style={{ marginTop: '20px', color: '#fff', fontSize: '22px' }}>Подготовка к ОГЭ / ЕГЭ и IT-старт</h3>
-            <p style={{ color: '#8b949e', fontSize: '16px', lineHeight: '1.5' }}>
-              Гарантированное достижение результата. Готовим к экзаменам по информатике, математике и физике. Обучаем веб-разработке и созданию игр.
-            </p>
-          </div>
-
-          <div className="glass-card">
-            <span className="badge badge-yellow">ВЗРОСЛЫМ (18+)</span>
-            <h3 style={{ marginTop: '20px', color: '#fff', fontSize: '22px' }}>Профессиональная переподготовка</h3>
-            <p style={{ color: '#8b949e', fontSize: '16px', lineHeight: '1.5' }}>
-              Курсы дополнительного профессионального образования и повышения квалификации. Освоение новой профессии с нуля с выдачей официального диплома.
-            </p>
-          </div>
-
-        </div>
-      </motion.section>
-
-      <motion.section 
-        variants={fadeInUp} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.2 }}
-        className="glass-card" 
-        style={{ marginBottom: '80px', borderColor: 'rgba(35, 134, 54, 0.4)', background: 'rgba(35, 134, 54, 0.05)' }}
-      >
-        <h2 style={{ color: '#3fb950', fontSize: '30px', marginTop: 0, marginBottom: '20px' }}>
-          👨‍👩‍👦 Информация для родителей: Гарантия результата
-        </h2>
-        <p style={{ fontSize: '16px', lineHeight: '1.6', color: '#c9d1d9' }}>
-          Ключевой фактор успеха — регулярность. Мы внедрили <strong>Систему жизней ❤️</strong>, которая позволяет родителям видеть вовлеченность ребенка без постоянных расспросов.
-        </p>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px', marginTop: '30px' }}>
-          <div>
-            <h4 style={{ margin: '0 0 10px 0', color: '#d29922', fontSize: '18px' }}>❤️ 4 Жизни на полугодие</h4>
-            <p style={{ margin: 0, fontSize: '14px', color: '#8b949e', lineHeight: '1.5' }}>Списываются за систематические прогулы или несданные вовремя ДЗ.</p>
-          </div>
-          <div>
-            <h4 style={{ margin: '0 0 10px 0', color: '#58a6ff', fontSize: '18px' }}>📱 Telegram-контроль</h4>
-            <p style={{ margin: 0, fontSize: '14px', color: '#8b949e', lineHeight: '1.5' }}>Автоматические уведомления при изменении жизней или сдаче ДЗ.</p>
-          </div>
-          <div>
-            <h4 style={{ margin: '0 0 10px 0', color: '#3fb950', fontSize: '18px' }}>🎓 Гарантия договора</h4>
-            <p style={{ margin: 0, fontSize: '14px', color: '#8b949e', lineHeight: '1.5' }}>Сохранение жизней = юридическая гарантия сдачи экзамена.</p>
-          </div>
-        </div>
-      </motion.section>
-
-      <motion.footer 
-        initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 0.2, duration: 1 }} viewport={{ once: true }}
-        style={{ borderTop: '1px solid rgba(255,255,255,0.1)', padding: '30px 0', color: '#8b949e', textAlign: 'center' }}
-      >
-        <p style={{ margin: '0 0 10px 0' }}>📍 Лицензированный образовательный центр QUDEMA</p>
-        <p style={{ margin: '0 0 10px 0' }}>📞 Техническая поддержка: <strong style={{ color: '#fff' }}>info@qudema.com</strong></p>
-        <p style={{ margin: 0 }}>© 2026 QUDEMA. Все права защищены.</p>
-      </motion.footer>
-    </div>
-  );
-}
 
 function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -1551,20 +1443,6 @@ function DashboardPage({ user, setUser }) {
           {linkMessage && <p style={{ marginTop: '10px', color: '#3fb950', fontWeight: 'bold' }}>{linkMessage}</p>}
         </div> {/* ✅ ЗАКРЫВАЕМ БЛОК ССЫЛКИ ЗДЕСЬ */}
 
-        {/* ✅ ТЕПЕРЬ ЭТО ОТДЕЛЬНЫЙ БЛОК */}
-        <div className="glass-card" style={{ marginBottom: '40px', border: '1px solid rgba(210, 153, 34, 0.3)' }}>
-          <h3 style={{ marginTop: 0, color: '#fff' }}>📢 Проверка присутствия на следующем уроке</h3>
-          <p style={{ color: '#8b949e', fontSize: '14px' }}>
-            Система отправит интерактивные кнопки всем ученикам выбранной группы в Telegram.
-          </p>
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginTop: '15px' }}>
-            <button onClick={handleStartAttendance} className="btn btn-primary" style={{ background: '#d29922', borderColor: '#d29922' }}>
-              ⚡ Запустить сбор подтверждений
-            </button>
-            {attMessage && <span style={{ fontWeight: 'bold', fontSize: '14px' }}>{attMessage}</span>}
-          </div>
-        </div>
-
         {/* Блок ДЗ */}
         <div className="glass-card" style={{ marginBottom: '40px' }}>
           <h3 style={{ marginTop: 0, color: '#fff' }}>📝 Создать новое задание</h3>
@@ -1779,7 +1657,7 @@ function DashboardPage({ user, setUser }) {
                     borderColor: '#d29922'
                   }}
                 >
-                  ⚡ Запустить посещаемость
+                  ⚡ Проверка посещаемости
                 </button>
                 
                 {teacherAttendance && (
@@ -2672,6 +2550,10 @@ export default function App() {
           path="/forgot-password"
           element={<ForgotPasswordPage />}
         />
+
+        <Route 
+          path="/" 
+          element={<LandingPage user={user} />} />
 
         <Route
           path="/reset-password/:token"
