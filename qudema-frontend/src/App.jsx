@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate, useParams} from 'react-router-dom';
 import { Toaster, toast } from 'react-hot-toast';
 import './App.css';
 
@@ -125,6 +125,259 @@ function LandingPage({ user }) {
   );
 }
 
+function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    setMessage('');
+    setError('');
+
+    try {
+      const response = await axios.post(
+        '/api/forgot-password',
+        { email }
+      );
+
+      setMessage(
+        response.data.message ||
+        'Если аккаунт существует, письмо отправлено.'
+      );
+    } catch (err) {
+      setError(
+        err.response?.data?.error ||
+        'Ошибка отправки запроса'
+      );
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        maxWidth: '450px',
+        margin: '60px auto',
+        padding: '20px'
+      }}
+    >
+      <div className="glass-card">
+        <h1 style={{ color: '#fff' }}>
+          Восстановление пароля
+        </h1>
+
+        <p
+          style={{
+            color: '#8b949e',
+            lineHeight: '1.5'
+          }}
+        >
+          Введите Email аккаунта. Если он существует,
+          мы отправим ссылку для восстановления.
+        </p>
+
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '15px',
+            marginTop: '20px'
+          }}
+        >
+          <input
+            type="email"
+            value={email}
+            onChange={(e) =>
+              setEmail(e.target.value)
+            }
+            placeholder="Email"
+            className="premium-input"
+            required
+          />
+
+          <button
+            type="submit"
+            className="btn btn-primary"
+          >
+            Отправить ссылку
+          </button>
+        </form>
+
+        {message && (
+          <p
+            style={{
+              color: '#3fb950',
+              marginTop: '15px'
+            }}
+          >
+            {message}
+          </p>
+        )}
+
+        {error && (
+          <p
+            style={{
+              color: '#ff7b72',
+              marginTop: '15px'
+            }}
+          >
+            {error}
+          </p>
+        )}
+
+        <Link
+          to="/login"
+          style={{
+            display: 'inline-block',
+            marginTop: '20px',
+            color: '#58a6ff'
+          }}
+        >
+          ← Вернуться ко входу
+        </Link>
+      </div>
+    </motion.div>
+  );
+}
+
+
+function ResetPasswordPage() {
+  const { token } = useParams();
+  const navigate = useNavigate();
+
+  const [password, setPassword] = useState('');
+  const [repeatPassword, setRepeatPassword] = useState('');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    setMessage('');
+    setError('');
+
+    if (password.length < 6) {
+      setError(
+        'Пароль должен содержать минимум 6 символов.'
+      );
+      return;
+    }
+
+    if (password !== repeatPassword) {
+      setError('Пароли не совпадают.');
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        '/api/reset-password',
+        {
+          token,
+          newPassword: password
+        }
+      );
+
+      setMessage(
+        response.data.message ||
+        'Пароль успешно изменён.'
+      );
+
+      setTimeout(() => {
+        navigate('/login');
+      }, 1200);
+
+    } catch (err) {
+      setError(
+        err.response?.data?.error ||
+        'Не удалось изменить пароль.'
+      );
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      style={{
+        maxWidth: '450px',
+        margin: '60px auto',
+        padding: '20px'
+      }}
+    >
+      <div className="glass-card">
+        <h1 style={{ color: '#fff' }}>
+          Новый пароль
+        </h1>
+
+        <form
+          onSubmit={handleSubmit}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '15px',
+            marginTop: '20px'
+          }}
+        >
+          <input
+            type="password"
+            value={password}
+            onChange={(e) =>
+              setPassword(e.target.value)
+            }
+            placeholder="Новый пароль"
+            className="premium-input"
+            required
+          />
+
+          <input
+            type="password"
+            value={repeatPassword}
+            onChange={(e) =>
+              setRepeatPassword(e.target.value)
+            }
+            placeholder="Повторите пароль"
+            className="premium-input"
+            required
+          />
+
+          <button
+            type="submit"
+            className="btn btn-success"
+          >
+            Изменить пароль
+          </button>
+        </form>
+
+        {message && (
+          <p
+            style={{
+              color: '#3fb950',
+              marginTop: '15px'
+            }}
+          >
+            {message}
+          </p>
+        )}
+
+        {error && (
+          <p
+            style={{
+              color: '#ff7b72',
+              marginTop: '15px'
+            }}
+          >
+            {error}
+          </p>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // АВТОРИЗАЦИЯ
 function LoginPage({ user, setUser }) {
   const [authMode, setAuthMode] = useState('telegram'); 
@@ -153,15 +406,15 @@ function LoginPage({ user, setUser }) {
 
     try {
       if (authMode === 'telegram') {
-        const res = await axios.post('http://localhost:5000/api/login', { token });
+        const res = await axios.post('/api/login', { token });
         if (res.data.success) handleAuthSuccess(res.data);
       } 
       else if (authMode === 'email_login') {
-        const res = await axios.post('http://localhost:5000/api/login/email', { email, password });
+        const res = await axios.post('/api/login/email', { email, password });
         if (res.data.success) handleAuthSuccess(res.data);
       } 
       else if (authMode === 'email_register') {
-        const res = await axios.post('http://localhost:5000/api/register', { 
+        const res = await axios.post('/api/register', { 
           email, password, first_name: firstName, role 
         });
         if (res.data.success) handleAuthSuccess(res.data);
@@ -261,6 +514,22 @@ function LoginPage({ user, setUser }) {
           <Link to="/" style={{ color: '#58a6ff', textDecoration: 'none', fontWeight: 'bold' }}>← Вернуться на главную</Link>
         </p>
       </div>
+
+      {authMode === 'email_login' && (
+        <div style={{ marginTop: '15px' }}>
+          <Link
+            to="/forgot-password"
+            style={{
+              color: '#58a6ff',
+              textDecoration: 'none',
+              fontSize: '14px'
+            }}
+          >
+            Забыли пароль?
+          </Link>
+        </div>
+      )}
+
     </motion.div>
   );
 }
@@ -273,70 +542,440 @@ const ParentDashboard = () => {
   useEffect(() => {
     const fetchParentData = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/parent/dashboard');
+        const response = await axios.get('/api/parent/dashboard');
         setData(response.data);
       } catch (err) {
-        setError(err.response?.data?.error || 'Ошибка загрузки данных');
+        setError(
+          err.response?.data?.error ||
+          'Ошибка загрузки данных'
+        );
       }
     };
+
     fetchParentData();
   }, []);
 
-  if (error) return <div style={{ color: 'red', textAlign: 'center', marginTop: '20px' }}>{error}</div>;
-  if (!data) return <div style={{ textAlign: 'center', marginTop: '20px', color: 'white' }}>Загрузка данных...</div>;
+  if (error) {
+    return (
+      <div
+        style={{
+          color: '#ff7b72',
+          textAlign: 'center',
+          marginTop: '20px'
+        }}
+      >
+        {error}
+      </div>
+    );
+  }
 
-  const { child, homeworks } = data;
+  if (!data) {
+    return (
+      <div
+        style={{
+          textAlign: 'center',
+          marginTop: '20px',
+          color: '#fff'
+        }}
+      >
+        Загрузка данных...
+      </div>
+    );
+  }
+
+  const {
+    child,
+    groups = [],
+    homeworks = [],
+    attendance = []
+  } = data;
+
+  const getAttendanceText = (status) => {
+    if (status === 'confirmed') return '✅ Был';
+    if (status === 'absent') return '❌ Отсутствовал';
+    if (status === 'pending') return '⏳ Не ответил';
+    return status || 'Неизвестно';
+  };
+
+  const getHomeworkStatus = (status) => {
+    if (status === 'checked') return '✅ Принято';
+    if (status === 'rejected') return '❌ Отклонено';
+    if (status === 'submitted') return '⏳ На проверке';
+    return 'Не сдано';
+  };
 
   return (
     <div className="student-dashboard">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-panel">
-        <h2>📊 Успеваемость: {child.first_name}</h2>
-        <p style={{ color: '#aaa', marginBottom: '20px' }}>Режим наблюдения</p>
-        
-        <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <div className="glass-panel" style={{ flex: 1, minWidth: '200px' }}>
-            <p style={{ margin: '0 0 10px 0' }}>Остаток жизней ребенка:</p>
-            <div style={{ fontSize: '24px' }}>
-              {Array.from({ length: 4 }).map((_, i) => (
-                <span key={i} style={{ opacity: i < child.lives ? 1 : 0.3 }}>❤️</span>
-              ))}
+
+      {/* РЕБЕНОК */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-panel"
+      >
+        <h2 style={{ marginTop: 0 }}>
+          📊 {child.first_name}
+        </h2>
+
+        <p style={{ color: '#8b949e', marginBottom: '20px' }}>
+          Родительский кабинет
+        </p>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '20px'
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              minWidth: '200px'
+            }}
+          >
+            <p style={{ margin: '0 0 10px 0' }}>
+              Остаток жизней
+            </p>
+
+            <div
+              style={{
+                fontSize: '24px',
+                letterSpacing: '2px'
+              }}
+            >
+              {'❤️'.repeat(
+                Math.max(
+                  0,
+                  Math.min(4, Number(child.lives) || 0)
+                )
+              )}
+
+              {'🤍'.repeat(
+                4 -
+                Math.max(
+                  0,
+                  Math.min(4, Number(child.lives) || 0)
+                )
+              )}
             </div>
           </div>
-          
-          <div className="glass-panel" style={{ flex: 1, minWidth: '200px' }}>
-            <p style={{ margin: '0 0 10px 0' }}>Ссылка на занятие:</p>
-            {child.class_link ? (
-              <a href={child.class_link} target="_blank" rel="noreferrer" className="premium-button" style={{ display: 'inline-block', textDecoration: 'none' }}>
-                🔗 Перейти на урок
-              </a>
-            ) : (
-              <p style={{ color: '#ff6b6b' }}>Ссылка пока не добавлена</p>
-            )}
+
+          <div
+            className="glass-panel"
+            style={{
+              minWidth: '200px'
+            }}
+          >
+            <p style={{ margin: '0 0 10px 0' }}>
+              Групп
+            </p>
+
+            <strong
+              style={{
+                fontSize: '24px',
+                color: '#58a6ff'
+              }}
+            >
+              {groups.length}
+            </strong>
           </div>
         </div>
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel" style={{ marginTop: '20px' }}>
-        <h3>📝 Домашние задания</h3>
-        {homeworks.length === 0 ? (
-          <p style={{ color: '#aaa' }}>Заданий пока нет.</p>
+      {/* ГРУППЫ */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="glass-panel"
+        style={{ marginTop: '20px' }}
+      >
+        <h3 style={{ marginTop: 0 }}>
+          🎓 Группы ребенка
+        </h3>
+
+        {groups.length === 0 ? (
+          <p style={{ color: '#8b949e' }}>
+            Ребенок пока не состоит ни в одной группе.
+          </p>
         ) : (
-          homeworks.map(hw => (
-            <div key={hw.id} className="homework-card glass-panel" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <h4 style={{ margin: '0 0 10px 0', color: '#6fb1fc' }}>{hw.title}</h4>
-              <p style={{ margin: 0, fontSize: '14px', color: 
-                hw.status === 'checked' ? '#4CAF50' : 
-                hw.status === 'rejected' ? '#F44336' : 
-                hw.status === 'submitted' ? '#FFC107' : '#aaa' 
-              }}>
-                Статус: {
-                  hw.status === 'checked' ? '✅ Принято' :
-                  hw.status === 'rejected' ? '❌ Отклонено' :
-                  hw.status === 'submitted' ? '⏳ Ожидает проверки' : 'Не сдано'
-                }
-              </p>
-            </div>
-          ))
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: '15px'
+            }}
+          >
+            {groups.map(group => (
+              <div
+                key={group.id}
+                className="glass-panel"
+                style={{
+                  background: 'rgba(255,255,255,0.02)'
+                }}
+              >
+                <h4
+                  style={{
+                    margin: '0 0 8px 0',
+                    color: '#58a6ff'
+                  }}
+                >
+                  {group.name}
+                </h4>
+
+                {group.teacher_name && (
+                  <p
+                    style={{
+                      margin: '0 0 12px 0',
+                      color: '#8b949e',
+                      fontSize: '13px'
+                    }}
+                  >
+                    Преподаватель: {group.teacher_name}
+                  </p>
+                )}
+
+                {group.static_link ? (
+                  <a
+                    href={group.static_link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="premium-button"
+                    style={{
+                      display: 'inline-block',
+                      textDecoration: 'none'
+                    }}
+                  >
+                    🎥 Перейти на занятие
+                  </a>
+                ) : (
+                  <span
+                    style={{
+                      color: '#8b949e',
+                      fontSize: '13px'
+                    }}
+                  >
+                    Ссылка на занятие не назначена
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
+      {/* ДОМАШНИЕ ЗАДАНИЯ */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        className="glass-panel"
+        style={{ marginTop: '20px' }}
+      >
+        <h3 style={{ marginTop: 0 }}>
+          📝 Домашние задания
+        </h3>
+
+        {homeworks.length === 0 ? (
+          <p style={{ color: '#8b949e' }}>
+            Актуальных заданий пока нет.
+          </p>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}
+          >
+            {homeworks.map(hw => (
+              <div
+                key={hw.id}
+                className="homework-card glass-panel"
+                style={{
+                  background: 'rgba(255,255,255,0.02)'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '15px',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <div>
+                    <h4
+                      style={{
+                        margin: '0 0 7px 0',
+                        color: '#58a6ff'
+                      }}
+                    >
+                      {hw.title}
+                    </h4>
+
+                    <p
+                      style={{
+                        margin: '0 0 7px 0',
+                        color: '#d29922',
+                        fontSize: '13px'
+                      }}
+                    >
+                      📚 {hw.group_name}
+                    </p>
+                  </div>
+
+                  <strong
+                    style={{
+                      color:
+                        hw.status === 'checked'
+                          ? '#3fb950'
+                          : hw.status === 'rejected'
+                          ? '#ff7b72'
+                          : hw.status === 'submitted'
+                          ? '#d29922'
+                          : '#8b949e',
+                      fontSize: '13px'
+                    }}
+                  >
+                    {getHomeworkStatus(hw.status)}
+                  </strong>
+                </div>
+
+                {hw.deadline && (
+                  <p
+                    style={{
+                      margin: '8px 0',
+                      color: '#8b949e',
+                      fontSize: '13px'
+                    }}
+                  >
+                    ⏰ Дедлайн:{' '}
+                    {new Date(hw.deadline).toLocaleString('ru-RU')}
+                  </p>
+                )}
+
+                {hw.feedback && (
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      padding: '10px',
+                      background: 'rgba(255,255,255,0.04)',
+                      borderRadius: '8px'
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: '#8b949e',
+                        fontSize: '12px',
+                        marginBottom: '4px'
+                      }}
+                    >
+                      Комментарий преподавателя
+                    </div>
+
+                    <div style={{ color: '#fff' }}>
+                      {hw.feedback}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </motion.div>
+
+      {/* ПОСЕЩАЕМОСТЬ */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="glass-panel"
+        style={{ marginTop: '20px' }}
+      >
+        <h3 style={{ marginTop: 0 }}>
+          📅 Посещаемость
+        </h3>
+
+        {attendance.length === 0 ? (
+          <p style={{ color: '#8b949e' }}>
+            Истории посещаемости пока нет.
+          </p>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px'
+            }}
+          >
+            {attendance.map(item => (
+              <div
+                key={item.id}
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255,255,255,0.02)',
+                  border:
+                    '1px solid rgba(255,255,255,0.05)'
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <strong style={{ color: '#fff' }}>
+                    {item.group_name}
+                  </strong>
+
+                  <span
+                    style={{
+                      color:
+                        item.status === 'confirmed'
+                          ? '#3fb950'
+                          : item.status === 'absent'
+                          ? '#ff7b72'
+                          : '#d29922'
+                    }}
+                  >
+                    {getAttendanceText(item.status)}
+                  </span>
+                </div>
+
+                <p
+                  style={{
+                    margin: '6px 0 0 0',
+                    color: '#8b949e',
+                    fontSize: '12px'
+                  }}
+                >
+                  {item.session_created_at
+                    ? new Date(
+                        item.session_created_at
+                      ).toLocaleString('ru-RU')
+                    : 'Дата неизвестна'}
+                </p>
+
+                {item.reason && (
+                  <p
+                    style={{
+                      margin: '5px 0 0 0',
+                      color: '#c9d1d9',
+                      fontSize: '13px'
+                    }}
+                  >
+                    Причина: {item.reason}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </motion.div>
     </div>
@@ -346,9 +985,9 @@ const ParentDashboard = () => {
 // ГЛАВНЫЙ РАБОЧИЙ СТОЛ (Ученик / Учитель / Родитель)
 function DashboardPage({ user, setUser }) {
   const navigate = useNavigate();
-  const [activeAttendance, setActiveAttendance] = useState(null);
+  const [activeAttendance, setActiveAttendance] = useState([]);
   const [absentReason, setAbsentReason] = useState('');
-  const [showReasonInput, setShowReasonInput] = useState(false);
+  const [showReasonInput, setShowReasonInput] = useState(null);
   const [attMessage, setAttMessage] = useState('');
   const [students, setStudents] = useState([]);
   const [newLink, setNewLink] = useState('');
@@ -356,8 +995,14 @@ function DashboardPage({ user, setUser }) {
   const [studentHomeworks, setStudentHomeworks] = useState([]);
   const [activeSubmissions, setActiveSubmissions] = useState({});
   const [groups, setGroups] = useState([]);
+  const [studentGroups, setStudentGroups] = useState([]);
   const [selectedGroupLink, setSelectedGroupLink] = useState('');
   const [selectedGroupHw, setSelectedGroupHw] = useState('');
+  const [selectedTeacherGroup, setSelectedTeacherGroup] = useState('');
+  const [availableStudents, setAvailableStudents] = useState([]);
+  const [selectedStudentToAdd, setSelectedStudentToAdd] = useState('');
+  const [groupActionMessage, setGroupActionMessage] = useState('');
+  const [teacherAttendance, setTeacherAttendance] = useState(null);
 
   const [hwTitle, setHwTitle] = useState('');
   const [hwDesc, setHwDesc] = useState('');
@@ -369,14 +1014,19 @@ function DashboardPage({ user, setUser }) {
   const [linkTgMessage, setLinkTgMessage] = useState('');
 
   const [reviewFeedback, setReviewFeedback] = useState({});
-  const handleFeedbackChange = (hwId, value) => {
-    setReviewFeedback(prev => ({ ...prev, [hwId]: value }));
+
+  const getReviewFeedbackKey = (studentId, homeworkId) =>
+    `${studentId}:${homeworkId}`;
+
+  const handleFeedbackChange = (studentId, homeworkId, value) => {
+    const key = getReviewFeedbackKey(studentId, homeworkId);
+    setReviewFeedback(prev => ({ ...prev, [key]: value }));
   };
 
   const handleLinkTelegram = async () => {
     try {
         const token = localStorage.getItem('qudema_jwt');
-        const res = await axios.post('http://localhost:5000/api/link-telegram', 
+        const res = await axios.post('/api/link-telegram', 
             { code: tgCode },
             { headers: { Authorization: `Bearer ${token}` } }
         );
@@ -393,62 +1043,122 @@ function DashboardPage({ user, setUser }) {
 
   const handleStartAttendance = async () => {
     setAttMessage('');
-    
-    // ✅ Добавляем проверку: если группа не выбрана (пустая строка), прерываем функцию
-    if (!selectedGroupLink) {
-      setAttMessage('❌ Ошибка: Группа не выбрана!');
-      toast.error('Сначала создайте или выберите группу');
+
+    if (!selectedTeacherGroup) {
+      setAttMessage('❌ Сначала выберите группу');
+      toast.error('Сначала выберите группу');
       return;
     }
 
     try {
-      const res = await axios.post('http://localhost:5000/api/teacher/start-attendance', { groupId: selectedGroupLink });
+      const res = await axios.post('/api/teacher/start-attendance', {
+        groupId: Number(selectedTeacherGroup)
+      });
+
       setAttMessage('🚀 ' + res.data.message);
+      setTeacherAttendance(null);
+
+      await fetchTeacherAttendance(
+        res.data.sessionId
+      );
+
       toast.success('Опрос запущен!');
     } catch (err) {
-      setAttMessage('❌ ' + (err.response?.data?.error || 'Ошибка запуска'));
+      setAttMessage(
+        '❌ ' +
+        (err.response?.data?.error || 'Ошибка запуска')
+      );
     }
   };
 
-  const handleSubmissionChange = (hwId, field, value) => {
-      setActiveSubmissions(prev => ({
-          ...prev,
-          [hwId]: { ...prev[hwId], [field]: value }
-      }));
-  };
+  const handleCloseAttendance = async () => {
+    if (!teacherAttendance?.session?.id) return;
 
-  // Загрузка опросов присутствия (по JWT)
-  useEffect(() => {
-    if (user && user.role === 'student') {
-      axios.get('http://localhost:5000/api/student/attendance-status')
-        .then(res => setActiveAttendance(res.data))
-        .catch(err => console.error(err));
-    }
-  }, [user]);
-
-  const handleStudentAttendance = async (status, reason = '') => {
     try {
-      await axios.post('http://localhost:5000/api/student/submit-attendance', {
-        groupId: activeAttendance.group_id,
-        status,
-        reason
-      });
-      toast.success('Ваш ответ сохранен!');
-      setActiveAttendance(null); 
+      const response = await axios.post(
+        `/api/teacher/attendance/${teacherAttendance.session.id}/close`
+      );
+
+      toast.success('Перекличка закрыта');
+
+      await fetchTeacherAttendance(
+        teacherAttendance.session.id
+      );
+
+      setAttMessage(
+        '✅ ' + response.data.message
+      );
+
     } catch (err) {
-      toast.error('Ошибка сохранения ответа');
+      toast.error(
+        err.response?.data?.error ||
+        'Ошибка закрытия переклички'
+      );
     }
   };
 
-  const currentSavedLink = students.length > 0 ? students[0].static_link : null;
+  const fetchTeacherAttendance = async (sessionId) => {
+    if (!sessionId) return;
+
+    try {
+      const response = await axios.get(
+        `/api/teacher/attendance/${sessionId}`
+      );
+
+      setTeacherAttendance(response.data);
+    } catch (err) {
+      console.error(
+        'Ошибка получения результатов переклички:',
+        err
+      );
+    }
+  };
+
+  const handleStudentAttendance = async (sessionId, status, reason = '') => {
+      try {
+          await axios.post('/api/student/submit-attendance', {
+              sessionId,
+              status,
+              reason
+          });
+
+          toast.success('Ваш ответ сохранен!');
+
+          setActiveAttendance(prev =>
+              prev.filter(attendance => attendance.session_id !== sessionId)
+          );
+
+      } catch (err) {
+          toast.error(
+              err.response?.data?.error || 'Ошибка сохранения ответа'
+          );
+      }
+  };
+
+  const currentSavedLink =
+    groups.find(group => Number(group.id) === Number(selectedGroupLink))?.static_link || null;
 
   // Загрузка домашних заданий ученика (по JWT)
   useEffect(() => {
-    if (user && user.role === 'student') {
-        axios.get('http://localhost:5000/api/student/homeworks')
-             .then(res => setStudentHomeworks(res.data))
-             .catch(err => console.error(err));
-    }
+      if (!user || user.role !== 'student') return;
+
+      const loadStudentData = async () => {
+          try {
+              const [groupsRes, homeworksRes, attendanceRes] = await Promise.all([
+                  axios.get('/api/student/groups'),
+                  axios.get('/api/student/homeworks'),
+                  axios.get('/api/student/attendance-status/all')
+              ]);
+
+              setStudentGroups(groupsRes.data);
+              setStudentHomeworks(homeworksRes.data);
+              setActiveAttendance(attendanceRes.data);
+          } catch (err) {
+              console.error('Ошибка загрузки данных ученика:', err);
+          }
+      };
+
+      loadStudentData();
   }, [user]);
 
   useEffect(() => {
@@ -457,34 +1167,146 @@ function DashboardPage({ user, setUser }) {
     }
   }, [user, navigate]);
 
-  const fetchStudents = async () => {
+  const fetchStudents = useCallback(async () => {
     if (!user || user.role !== 'teacher') return;
     try {
-      const response = await axios.get('http://localhost:5000/api/students'); 
+      const response = await axios.get('/api/students');
       setStudents(response.data);
     } catch (err) {
       console.error('Ошибка при получении списка студентов:', err);
     }
-  };
+  }, [user]);
 
-  const fetchGroups = async () => {
-    if (!user || user.role !== 'teacher') return;
+  const fetchAvailableStudents = useCallback(async (groupId) => {
+    if (!groupId || !user || user.role !== 'teacher') return;
+
     try {
-      const response = await axios.get('http://localhost:5000/api/teacher/groups');
-      setGroups(response.data);
-      if (response.data.length > 0) {
-        setSelectedGroupLink(response.data[0].id);
-        setSelectedGroupHw(response.data[0].id);
+      const response = await axios.get(
+        `/api/teacher/groups/${groupId}/available-students`
+      );
+
+      setAvailableStudents(response.data || []);
+
+      if (response.data?.length > 0) {
+        setSelectedStudentToAdd(response.data[0].id);
+      } else {
+        setSelectedStudentToAdd('');
+      }
+    } catch (err) {
+      console.error(
+        'Ошибка при получении доступных учеников:',
+        err
+      );
+
+      setAvailableStudents([]);
+      setSelectedStudentToAdd('');
+    }
+  }, [user]);
+
+  const fetchGroups = useCallback(async () => {
+    if (!user || user.role !== 'teacher') return;
+
+    try {
+      const response = await axios.get('/api/teacher/groups');
+      const loadedGroups = response.data || [];
+
+      setGroups(loadedGroups);
+
+      if (loadedGroups.length > 0) {
+        const firstGroupId = loadedGroups[0].id;
+
+        setSelectedGroupLink(firstGroupId);
+        setSelectedGroupHw(firstGroupId);
+        setSelectedTeacherGroup(firstGroupId);
       }
     } catch (err) {
       console.error('Ошибка при получении групп:', err);
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     fetchStudents();
     fetchGroups();
-  }, [user]);
+  }, [fetchStudents, fetchGroups]);
+
+  useEffect(() => {
+    if (
+      user &&
+      user.role === 'teacher' &&
+      selectedTeacherGroup
+    ) {
+      fetchAvailableStudents(selectedTeacherGroup);
+    }
+  }, [selectedTeacherGroup, user, fetchAvailableStudents]);
+
+  const handleAddStudentToGroup = async () => {
+    if (!selectedTeacherGroup) {
+      toast.error('Сначала выберите группу');
+      return;
+    }
+
+    if (!selectedStudentToAdd) {
+      toast.error('Выберите ученика');
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        `/api/teacher/groups/${selectedTeacherGroup}/students`,
+        {
+          studentId: Number(selectedStudentToAdd)
+        }
+      );
+
+      setGroupActionMessage('✅ ' + response.data.message);
+      toast.success('Ученик добавлен в группу');
+
+      await fetchStudents();
+      await fetchAvailableStudents(selectedTeacherGroup);
+
+    } catch (err) {
+      const message =
+        err.response?.data?.error ||
+        'Ошибка добавления ученика';
+
+      setGroupActionMessage('❌ ' + message);
+      toast.error(message);
+    }
+  };
+
+  const handleRemoveStudentFromGroup = async (studentId) => {
+    if (!selectedTeacherGroup) return;
+
+    const student = students.find(
+      s => Number(s.id) === Number(studentId)
+    );
+
+    const confirmed = window.confirm(
+      `Удалить ${student?.first_name || 'ученика'} из этой группы?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const response = await axios.delete(
+        `/api/teacher/groups/${selectedTeacherGroup}/students/${studentId}`
+      );
+
+      setGroupActionMessage('✅ ' + response.data.message);
+      toast.success('Ученик удалён из группы');
+
+      await fetchStudents();
+      await fetchAvailableStudents(selectedTeacherGroup);
+
+    } catch (err) {
+      const message =
+        err.response?.data?.error ||
+        'Ошибка удаления ученика';
+
+      setGroupActionMessage('❌ ' + message);
+      toast.error(message);
+    }
+  };
 
   const handleLogout = () => {
     setUser(null);
@@ -499,7 +1321,7 @@ function DashboardPage({ user, setUser }) {
     if (operation === 'decrement' && currentLives > 0) newLives -= 1;
 
     try {
-      const response = await axios.put(`http://localhost:5000/api/students/${studentId}/lives`, { lives: newLives });
+      const response = await axios.put(`/api/students/${studentId}/lives`, { lives: newLives });
 
       if (response.status === 200) {
         setStudents(prev =>
@@ -512,6 +1334,16 @@ function DashboardPage({ user, setUser }) {
     } catch (err) {
       console.error('Ошибка при изменении жизней:', err);
     }
+  };
+
+  const handleSubmissionChange = (homeworkId, field, value) => {
+    setActiveSubmissions(prev => ({
+      ...prev,
+      [homeworkId]: {
+        ...(prev[homeworkId] || {}),
+        [field]: value
+      }
+    }));
   };
 
   // Сдача ДЗ учеником
@@ -530,12 +1362,12 @@ function DashboardPage({ user, setUser }) {
     if (submissionData.file) formData.append('file', submissionData.file);
 
     try {
-      await axios.post('http://localhost:5000/api/submissions/submit', formData);
+      await axios.post('/api/submissions/submit', formData);
       toast.success('Домашнее задание отправлено!');
       
-      const res = await axios.get('http://localhost:5000/api/student/homeworks');
+      const res = await axios.get('/api/student/homeworks');
       setStudentHomeworks(res.data);
-    } catch (err) {
+    } catch {
       toast.error('Ошибка при отправке задания');
     }
   };
@@ -552,14 +1384,20 @@ function DashboardPage({ user, setUser }) {
     }
 
     try {
-      const res = await axios.post('http://localhost:5000/api/teacher/update-link', {
+      const res = await axios.post('/api/update-class-link', {
         groupId: selectedGroupLink,
         link: newLink
       });
       setLinkMessage('✅ ' + res.data.message);
-      setCurrentSavedLink(newLink);
+      setGroups(prev =>
+        prev.map(group =>
+          Number(group.id) === Number(selectedGroupLink)
+            ? { ...group, static_link: newLink }
+            : group
+        )
+      );
       toast.success('Ссылка успешно обновлена!');
-    } catch (err) {
+    } catch {
       setLinkMessage('❌ Ошибка при обновлении ссылки');
     }
   };
@@ -576,7 +1414,7 @@ function DashboardPage({ user, setUser }) {
     if (hwTeacherFile) formData.append('file', hwTeacherFile);
 
     try {
-        await axios.post('http://localhost:5000/api/homeworks/create', formData);
+        await axios.post('/api/homeworks/create', formData);
         setCreateHwMessage('✅ Задание успешно создано и отправлено ученикам!');
 
         setHwTitle('');
@@ -585,21 +1423,22 @@ function DashboardPage({ user, setUser }) {
         setHwTeacherFile(null);
         
         fetchStudents(); 
-    } catch (err) {
+    } catch {
         setCreateHwMessage('❌ Ошибка при создании задания');
     }
   };
 
   // Проверка работы преподавателем (используется studentId вместо telegramId)
   const handleReviewHomework = async (studentId, homeworkId, status) => {
-    const feedback = reviewFeedback[homeworkId] || '';
+    const feedbackKey = getReviewFeedbackKey(studentId, homeworkId);
+    const feedback = reviewFeedback[feedbackKey] || '';
     try {
-      await axios.post('http://localhost:5000/api/homework/review', { studentId, homeworkId, status, feedback });
+      await axios.post('/api/homework/review', { studentId, homeworkId, status, feedback });
       toast.success(status === 'checked' ? 'Работа принята!' : 'Работа отклонена!');
       
-      setReviewFeedback(prev => ({ ...prev, [homeworkId]: '' }));
+      setReviewFeedback(prev => ({ ...prev, [feedbackKey]: '' }));
       fetchStudents(); 
-    } catch (err) {
+    } catch {
       toast.error('Ошибка при сохранении статуса');
     }
   };
@@ -610,6 +1449,39 @@ function DashboardPage({ user, setUser }) {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.6 } }
   };
+
+  const getStudentGroups = (student) => {
+    if (Array.isArray(student.groups) && student.groups.length > 0) {
+      return student.groups;
+    }
+
+    // Совместимость со старыми данными
+    if (student.group_id) {
+      return [{ id: student.group_id }];
+    }
+
+    return [];
+  };
+
+  const getStudentsForGroup = (groupId) => {
+    const normalizedGroupId = Number(groupId);
+
+    if (!normalizedGroupId) {
+      return [];
+    }
+
+    return students.filter(student =>
+      getStudentGroups(student).some(
+        group => Number(group.id) === normalizedGroupId
+      )
+    );
+  };
+
+  const selectedTeacherGroupData = groups.find(
+    group => Number(group.id) === Number(selectedTeacherGroup)
+  );
+
+  const visibleStudents = getStudentsForGroup(selectedTeacherGroup);
 
   // АДМИНКА ПРЕПОДАВАТЕЛЯ
   if (user.role === 'teacher') {
@@ -735,97 +1607,689 @@ function DashboardPage({ user, setUser }) {
           {createHwMessage && <p style={{ marginTop: '15px', color: '#3fb950', fontWeight: 'bold' }}>{createHwMessage}</p>}
         </div>
 
-        {/* Таблица группы */}
-        <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
-          <div style={{ padding: '20px 30px', borderBottom: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.02)' }}>
-            <h3 style={{ margin: 0, color: '#fff' }}>📋 Ваша группа</h3>
+        {/* ГРУППЫ И УЧЕНИКИ */}
+        <div
+          className="glass-card"
+          style={{
+            padding: '0',
+            overflow: 'hidden',
+            marginBottom: '40px'
+          }}
+        >
+          <div
+            style={{
+              padding: '20px 30px',
+              borderBottom: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(255,255,255,0.02)'
+            }}
+          >
+            <h3 style={{ margin: 0, color: '#fff' }}>
+              🎓 Мои группы
+            </h3>
+
+            <p
+              style={{
+                margin: '8px 0 0 0',
+                color: '#8b949e',
+                fontSize: '14px'
+              }}
+            >
+              Выберите группу, с которой сейчас работаете
+            </p>
           </div>
+
+          {/* КАРТОЧКИ ГРУПП */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '12px',
+              padding: '20px'
+            }}
+          >
+            {groups.map(group => {
+              const groupStudents = getStudentsForGroup(group.id);
+              const isSelected =
+                Number(selectedTeacherGroup) === Number(group.id);
+
+              return (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedTeacherGroup(group.id);
+                    setSelectedGroupLink(group.id);
+                    setSelectedGroupHw(group.id);
+                  }}
+                  style={{
+                    textAlign: 'left',
+                    padding: '16px',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    background: isSelected
+                      ? 'rgba(88, 166, 255, 0.12)'
+                      : 'rgba(255,255,255,0.03)',
+                    border: isSelected
+                      ? '1px solid rgba(88, 166, 255, 0.7)'
+                      : '1px solid rgba(255,255,255,0.08)',
+                    color: '#fff',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '16px',
+                      fontWeight: 'bold',
+                      marginBottom: '8px'
+                    }}
+                  >
+                    {group.name}
+                  </div>
+
+                  <div
+                    style={{
+                      color: isSelected
+                        ? '#58a6ff'
+                        : '#8b949e',
+                      fontSize: '13px'
+                    }}
+                  >
+                    👨‍🎓 {groupStudents.length}{' '}
+                    {groupStudents.length === 1
+                      ? 'ученик'
+                      : groupStudents.length >= 2 &&
+                        groupStudents.length <= 4
+                      ? 'ученика'
+                      : 'учеников'}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ВЫБРАННАЯ ГРУППА */}
+          {selectedTeacherGroupData && (
+            <div
+              style={{
+                padding: '20px 30px',
+                borderTop:
+                  '1px solid rgba(255,255,255,0.08)',
+                borderBottom:
+                  '1px solid rgba(255,255,255,0.08)',
+                background:
+                  'rgba(88, 166, 255, 0.04)'
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: '15px',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div>
+                  <h3
+                    style={{
+                      margin: '0 0 5px 0',
+                      color: '#fff'
+                    }}
+                  >
+                    📋 {selectedTeacherGroupData.name}
+                  </h3>
+
+                  <p
+                    style={{
+                      margin: 0,
+                      color: '#8b949e',
+                      fontSize: '13px'
+                    }}
+                  >
+                    Учеников:{' '}
+                    <strong style={{ color: '#58a6ff' }}>
+                      {visibleStudents.length}
+                    </strong>
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleStartAttendance}
+                  className="btn btn-primary"
+                  style={{
+                    background: '#d29922',
+                    borderColor: '#d29922'
+                  }}
+                >
+                  ⚡ Запустить посещаемость
+                </button>
+                
+                {teacherAttendance && (
+                  <div
+                    style={{
+                      marginTop: '20px',
+                      paddingTop: '20px',
+                      borderTop:
+                        '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '15px',
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <div>
+                        <strong style={{ color: '#fff' }}>
+                          📊 {teacherAttendance.session.group_name}
+                        </strong>
+
+                        <div
+                          style={{
+                            marginTop: '6px',
+                            color: '#8b949e',
+                            fontSize: '13px'
+                          }}
+                        >
+                          🟢 Пришли:{' '}
+                          {teacherAttendance.stats.confirmed}
+                          {'  '}
+                          🔴 Пропустят:{' '}
+                          {teacherAttendance.stats.absent}
+                          {'  '}
+                          🟡 Не ответили:{' '}
+                          {teacherAttendance.stats.pending}
+                        </div>
+                      </div>
+
+                      {teacherAttendance.session.status === 'active' && (
+                        <button
+                          type="button"
+                          onClick={handleCloseAttendance}
+                          className="btn btn-danger"
+                        >
+                          Завершить опрос
+                        </button>
+                      )}
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        marginTop: '15px'
+                      }}
+                    >
+                      {teacherAttendance.students.map(student => (
+                        <div
+                          key={student.student_id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            padding: '9px 12px',
+                            borderRadius: '8px',
+                            background:
+                              'rgba(255,255,255,0.025)'
+                          }}
+                        >
+                          <span style={{ color: '#fff' }}>
+                            {student.first_name}
+                          </span>
+
+                          <span
+                            style={{
+                              color:
+                                student.status === 'confirmed'
+                                  ? '#3fb950'
+                                  : student.status === 'absent'
+                                  ? '#ff7b72'
+                                  : '#d29922'
+                            }}
+                          >
+                            {student.status === 'confirmed'
+                              ? '✅ Будет'
+                              : student.status === 'absent'
+                              ? `❌ ${student.reason || 'Нет'}`
+                              : '⏳ Не ответил'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {attMessage && (
+                <p
+                  style={{
+                    margin: '12px 0 0 0',
+                    fontWeight: 'bold',
+                    fontSize: '14px'
+                  }}
+                >
+                  {attMessage}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* УПРАВЛЕНИЕ СОСТАВОМ ГРУППЫ */}
+          <div
+            style={{
+              padding: '18px 30px',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(255,255,255,0.015)'
+            }}
+          >
+            <h4
+              style={{
+                margin: '0 0 10px 0',
+                color: '#fff'
+              }}
+            >
+              👥 Управление учениками
+            </h4>
+
+            <div
+              style={{
+                display: 'flex',
+                gap: '10px',
+                flexWrap: 'wrap',
+                alignItems: 'center'
+              }}
+            >
+              <select
+                value={selectedStudentToAdd}
+                onChange={(e) =>
+                  setSelectedStudentToAdd(e.target.value)
+                }
+                className="premium-input"
+                style={{
+                  flex: 1,
+                  minWidth: '220px'
+                }}
+              >
+                {availableStudents.length === 0 ? (
+                  <option value="">
+                    Все ученики уже в этой группе
+                  </option>
+                ) : (
+                  availableStudents.map(student => (
+                    <option
+                      key={student.id}
+                      value={student.id}
+                    >
+                      {student.first_name}
+                      {student.username
+                        ? ` (@${student.username})`
+                        : ''}
+                    </option>
+                  ))
+                )}
+              </select>
+
+              <button
+                type="button"
+                onClick={handleAddStudentToGroup}
+                className="btn btn-success"
+                disabled={!selectedStudentToAdd}
+              >
+                + Добавить ученика
+              </button>
+            </div>
+
+            {groupActionMessage && (
+              <p
+                style={{
+                  margin: '10px 0 0 0',
+                  fontSize: '13px',
+                  fontWeight: 'bold'
+                }}
+              >
+                {groupActionMessage}
+              </p>
+            )}
+          </div>
+
+          {/* ТАБЛИЦА УЧЕНИКОВ */}
           <div style={{ overflowX: 'auto' }}>
             <table className="premium-table">
               <thead>
                 <tr>
                   <th>Студент</th>
-                  <th>Группа</th>
-                  <th style={{ textAlign: 'center' }}>Жизни</th>
-                  <th style={{ textAlign: 'center' }}>Управление</th>
-                  <th>Домашнее задание</th>
+                  <th style={{ textAlign: 'center' }}>
+                    Жизни
+                  </th>
+                  <th style={{ textAlign: 'center' }}>
+                    Управление
+                  </th>
+                  <th>
+                    Домашнее задание
+                  </th>
                 </tr>
               </thead>
+
               <tbody>
-                {students.map(student => (
-                  <tr key={student.id}>
-                    <td>
-                      <strong style={{ color: '#fff' }}>{student.first_name}</strong>
-                      {student.username && <div style={{ fontSize: '12px', color: '#8b949e' }}>@{student.username}</div>}
-                    </td>
-
-                    <td>{student.group_name || 'Без группы'}</td>
-
-                    <td style={{ textAlign: 'center', fontSize: '18px' }}>
-                      {'❤️'.repeat(student.lives || 0)}{'🤍'.repeat(4 - (student.lives || 0))}
-                    </td>
-
-                    <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                        <button 
-                          onClick={() => handleUpdateLives(student.id, student.lives, 'increment')} 
-                          className="btn btn-success" 
-                          style={{ padding: '4px 8px', fontSize: '14px' }} 
-                          disabled={student.lives >= 4}
-                        >+</button>
-                        <button 
-                          onClick={() => handleUpdateLives(student.id, student.lives, 'decrement')} 
-                          className="btn btn-danger" 
-                          style={{ padding: '4px 8px', fontSize: '14px' }} 
-                          disabled={student.lives <= 0}
-                        >-</button>
-                      </div>
-                    </td>
-
-                    <td style={{ minWidth: '250px', verticalAlign: 'top' }}>
-                      {student.homeworks && student.homeworks.length > 0 ? (
-                        <div className="custom-scrollbar" style={{ maxHeight: '220px', overflowY: 'auto', paddingRight: '10px' }}>
-                          {student.homeworks.map(hw => (
-                            <div key={hw.homework_id} style={{ marginBottom: '12px', paddingBottom: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                              <strong style={{ color: '#fff', display: 'block', marginBottom: '5px' }}>{hw.title}</strong>
-                              
-                              {!hw.status || hw.status === 'rejected' ? (
-                                <span style={{ color: '#ff7b72', fontSize: '13px' }}>Не сдано / Отклонено ❌</span>
-                              ) : hw.status === 'checked' ? (
-                                <div>
-                                  <span style={{ color: '#3fb950', fontWeight: 'bold', fontSize: '13px' }}>Проверено ✅</span> <br/>
-                                  {(hw.submission_link || hw.student_file) && (
-                                    <a href={hw.submission_link || `http://localhost:5000${hw.student_file}`} target="_blank" rel="noreferrer" style={{ color: '#8b949e', fontSize: '12px', textDecoration: 'none' }}>🔗 Открыть работу</a>
-                                  )}
-                                </div>
-                              ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                  <a href={hw.submission_link || `http://localhost:5000${hw.student_file}`} target="_blank" rel="noreferrer" style={{ color: '#58a6ff', textDecoration: 'none', fontSize: '13px' }}>🔗 Открыть решение</a>
-                                  
-                                  <input 
-                                    type="text" 
-                                    placeholder="Комментарий к работе..." 
-                                    value={reviewFeedback[hw.homework_id] || ''}
-                                    onChange={(e) => handleFeedbackChange(hw.homework_id, e.target.value)}
-                                    className="premium-input"
-                                    style={{ fontSize: '12px', padding: '6px' }}
-                                  />
-                                  
-                                  <div style={{ display: 'flex', gap: '5px' }}>
-                                    <button onClick={() => handleReviewHomework(student.id, hw.homework_id, 'checked')} className="btn btn-success" style={{ padding: '4px 8px', fontSize: '12px', flex: 1 }}>Принять</button>
-                                    <button onClick={() => handleReviewHomework(student.id, hw.homework_id, 'rejected')} className="btn btn-danger" style={{ padding: '4px 8px', fontSize: '12px', flex: 1 }}>Отклонить</button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span style={{ color: '#8b949e' }}>Нет заданий</span>
-                      )}
+                {visibleStudents.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan="4"
+                      style={{
+                        textAlign: 'center',
+                        padding: '30px',
+                        color: '#8b949e'
+                      }}
+                    >
+                      В этой группе пока нет учеников.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  visibleStudents.map(student => (
+                    <tr key={student.id}>
+                      <td>
+                        <strong
+                          style={{ color: '#fff' }}
+                        >
+                          {student.first_name}
+                        </strong>
+
+                        {student.username && (
+                          <div
+                            style={{
+                              fontSize: '12px',
+                              color: '#8b949e'
+                            }}
+                          >
+                            @{student.username}
+                          </div>
+                        )}
+                      </td>
+
+                      <td
+                        style={{
+                          textAlign: 'center',
+                          fontSize: '18px'
+                        }}
+                      >
+                        {'❤️'.repeat(
+                          Math.max(
+                            0,
+                            Math.min(
+                              4,
+                              Number(student.lives) || 0
+                            )
+                          )
+                        )}
+
+                        {'🤍'.repeat(
+                          4 -
+                          Math.max(
+                            0,
+                            Math.min(
+                              4,
+                              Number(student.lives) || 0
+                            )
+                          )
+                        )}
+                      </td>
+
+                      <td style={{ textAlign: 'center' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: '5px',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <button
+                            onClick={() =>
+                              handleUpdateLives(
+                                student.id,
+                                student.lives,
+                                'increment'
+                              )
+                            }
+                            className="btn btn-success"
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '14px'
+                            }}
+                            disabled={student.lives >= 4}
+                          >
+                            +
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              handleUpdateLives(
+                                student.id,
+                                student.lives,
+                                'decrement'
+                              )
+                            }
+                            className="btn btn-danger"
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '14px'
+                            }}
+                            disabled={student.lives <= 0}
+                          >
+                            -
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              handleRemoveStudentFromGroup(student.id)
+                            }
+                            className="btn btn-danger"
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '12px'
+                            }}
+                            title="Удалить ученика из группы"
+                          >
+                            Убрать
+                          </button>
+                          </div>
+                      </td>
+
+                      <td
+                        style={{
+                          minWidth: '250px',
+                          verticalAlign: 'top'
+                        }}
+                      >
+                        {student.homeworks &&
+                        student.homeworks.length > 0 ? (
+                          <div
+                            className="custom-scrollbar"
+                            style={{
+                              maxHeight: '220px',
+                              overflowY: 'auto',
+                              paddingRight: '10px'
+                            }}
+                          >
+                            {student.homeworks.map(hw => (
+                              <div
+                                key={hw.homework_id}
+                                style={{
+                                  marginBottom: '12px',
+                                  paddingBottom: '12px',
+                                  borderBottom:
+                                    '1px solid rgba(255,255,255,0.05)'
+                                }}
+                              >
+                                <strong
+                                  style={{
+                                    color: '#fff',
+                                    display: 'block',
+                                    marginBottom: '5px'
+                                  }}
+                                >
+                                  {hw.title}
+                                </strong>
+
+                                {!hw.status ||
+                                hw.status === 'rejected' ? (
+                                  <span
+                                    style={{
+                                      color: '#ff7b72',
+                                      fontSize: '13px'
+                                    }}
+                                  >
+                                    Не сдано / Отклонено ❌
+                                  </span>
+                                ) : hw.status === 'checked' ? (
+                                  <div>
+                                    <span
+                                      style={{
+                                        color: '#3fb950',
+                                        fontWeight: 'bold',
+                                        fontSize: '13px'
+                                      }}
+                                    >
+                                      Проверено ✅
+                                    </span>
+
+                                    <br />
+
+                                    {(hw.submission_link ||
+                                      hw.student_file) && (
+                                      <a
+                                        href={
+                                          hw.submission_link ||
+                                          hw.student_file
+                                        }
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{
+                                          color: '#8b949e',
+                                          fontSize: '12px',
+                                          textDecoration: 'none'
+                                        }}
+                                      >
+                                        🔗 Открыть работу
+                                      </a>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '8px'
+                                    }}
+                                  >
+                                    {(hw.submission_link ||
+                                      hw.student_file) && (
+                                      <a
+                                        href={
+                                          hw.submission_link ||
+                                          hw.student_file
+                                        }
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        style={{
+                                          color: '#58a6ff',
+                                          textDecoration: 'none',
+                                          fontSize: '13px'
+                                        }}
+                                      >
+                                        🔗 Открыть решение
+                                      </a>
+                                    )}
+
+                                    <input
+                                      type="text"
+                                      placeholder="Комментарий к работе..."
+                                      value={
+                                        reviewFeedback[
+                                          getReviewFeedbackKey(
+                                            student.id,
+                                            hw.homework_id
+                                          )
+                                        ] || ''
+                                      }
+                                      onChange={e =>
+                                        handleFeedbackChange(
+                                          student.id,
+                                          hw.homework_id,
+                                          e.target.value
+                                        )
+                                      }
+                                      className="premium-input"
+                                      style={{
+                                        fontSize: '12px',
+                                        padding: '6px'
+                                      }}
+                                    />
+
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        gap: '5px'
+                                      }}
+                                    >
+                                      <button
+                                        onClick={() =>
+                                          handleReviewHomework(
+                                            student.id,
+                                            hw.homework_id,
+                                            'checked'
+                                          )
+                                        }
+                                        className="btn btn-success"
+                                        style={{
+                                          padding: '4px 8px',
+                                          fontSize: '12px',
+                                          flex: 1
+                                        }}
+                                      >
+                                        Принять
+                                      </button>
+
+                                      <button
+                                        onClick={() =>
+                                          handleReviewHomework(
+                                            student.id,
+                                            hw.homework_id,
+                                            'rejected'
+                                          )
+                                        }
+                                        className="btn btn-danger"
+                                        style={{
+                                          padding: '4px 8px',
+                                          fontSize: '12px',
+                                          flex: 1
+                                        }}
+                                      >
+                                        Отклонить
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span
+                            style={{ color: '#8b949e' }}
+                          >
+                            Нет заданий
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -857,34 +2321,114 @@ function DashboardPage({ user, setUser }) {
         <button onClick={handleLogout} className="btn btn-danger" style={{ padding: '8px 16px', fontSize: '14px' }}>🚪 Выйти</button>
       </div>
 
-      {activeAttendance && (
-        <div className="glass-card" style={{ marginBottom: '30px', background: 'rgba(210, 153, 34, 0.1)', borderColor: '#d29922', textAlign: 'center' }}>
-          <h3 style={{ margin: '0 0 10px 0', color: '#d29922' }}>🗓 Подтверждение присутствия на занятии</h3>
-          <p style={{ color: '#c9d1d9', fontSize: '15px' }}>Преподаватель ожидает вашего ответа. Вы придете на следующий урок?</p>
-          
-          {!showReasonInput ? (
-            <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', marginTop: '15px' }}>
-              <button onClick={() => handleStudentAttendance('confirmed')} className="btn btn-success" style={{ padding: '8px 25px' }}>✅ Да, я буду</button>
-              <button onClick={() => setShowReasonInput(true)} className="btn btn-danger" style={{ padding: '8px 25px' }}>❌ Не смогу</button>
-            </div>
-          ) : (
-            <div style={{ maxWidth: '400px', margin: '15px auto 0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <input 
-                type="text" 
-                placeholder="Укажите причину пропуска (например: заболел)..." 
-                value={absentReason} 
-                onChange={(e) => setAbsentReason(e.target.value)}
-                className="premium-input"
-                required
-              />
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => handleStudentAttendance('absent', absentReason)} className="btn btn-danger" style={{ flex: 1 }}>Отправить причину</button>
-                <button onClick={() => setShowReasonInput(false)} className="btn" style={{ background: 'rgba(255,255,255,0.1)', color: '#fff' }}>Назад</button>
-              </div>
-            </div>
-          )}
+      {activeAttendance.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '30px' }}>
+            {activeAttendance.map(attendance => (
+                <div
+                    key={attendance.session_id}
+                    className="glass-card"
+                    style={{
+                        background: 'rgba(210, 153, 34, 0.1)',
+                        borderColor: '#d29922'
+                    }}
+                >
+                    <h3 style={{ margin: '0 0 8px 0', color: '#d29922' }}>
+                        🗓 Подтверждение присутствия
+                    </h3>
+
+                    <p style={{ margin: '0 0 5px 0', color: '#fff', fontWeight: 'bold' }}>
+                        {attendance.group_name}
+                    </p>
+
+                    <p style={{ color: '#c9d1d9', fontSize: '14px' }}>
+                        Преподаватель ожидает вашего ответа на это занятие.
+                    </p>
+
+                    {!(
+                        showReasonInput === attendance.session_id
+                    ) ? (
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '10px',
+                                flexWrap: 'wrap',
+                                marginTop: '15px'
+                            }}
+                        >
+                            <button
+                                onClick={() =>
+                                    handleStudentAttendance(
+                                        attendance.session_id,
+                                        'confirmed'
+                                    )
+                                }
+                                className="btn btn-success"
+                            >
+                                ✅ Я приду
+                            </button>
+
+                            <button
+                                onClick={() =>
+                                    setShowReasonInput(attendance.session_id)
+                                }
+                                className="btn btn-danger"
+                            >
+                                ❌ Не смогу
+                            </button>
+                        </div>
+                    ) : (
+                        <div
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px',
+                                marginTop: '15px'
+                            }}
+                        >
+                            <input
+                                type="text"
+                                placeholder="Причина пропуска"
+                                value={absentReason}
+                                onChange={(e) =>
+                                    setAbsentReason(e.target.value)
+                                }
+                                className="premium-input"
+                            />
+
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <button
+                                    onClick={() =>
+                                        handleStudentAttendance(
+                                            attendance.session_id,
+                                            'absent',
+                                            absentReason
+                                        )
+                                    }
+                                    className="btn btn-danger"
+                                >
+                                    Отправить
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        setShowReasonInput(false);
+                                        setAbsentReason('');
+                                    }}
+                                    className="btn"
+                                    style={{
+                                        background: 'rgba(255,255,255,0.1)',
+                                        color: '#fff'
+                                    }}
+                                >
+                                    Назад
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ))}
         </div>
-      )}
+    )}
 
       <div className="glass-card" style={{ marginBottom: '30px', textAlign: 'center' }}>
         <h2 style={{ margin: '0 0 10px 0', color: '#fff' }}>
@@ -914,13 +2458,74 @@ function DashboardPage({ user, setUser }) {
 
           <div style={{ background: 'rgba(255,255,255,0.03)', padding: '15px 25px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', minWidth: '150px' }}>
             <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#c9d1d9' }}>Онлайн-занятие:</p>
-            {user.static_link ? (
-              <a href={user.static_link} target="_blank" rel="noreferrer" className="btn btn-success" style={{ display: 'inline-block', padding: '6px 15px', textDecoration: 'none', fontSize: '14px' }}>
-                🎥 Подключиться
-              </a>
-            ) : (
-              <p style={{ margin: 0, color: '#ff7b72', fontSize: '14px', fontWeight: 'bold' }}>Ссылка не назначена</p>
-            )}
+            <div
+                style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                    textAlign: 'left'
+                }}
+            >
+                {studentGroups.length === 0 ? (
+                    <p
+                        style={{
+                            margin: 0,
+                            color: '#ff7b72',
+                            fontSize: '14px'
+                        }}
+                    >
+                        Группы пока не назначены
+                    </p>
+                ) : (
+                    studentGroups.map(group => (
+                        <div
+                            key={group.id}
+                            style={{
+                                padding: '10px',
+                                borderRadius: '10px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid rgba(255,255,255,0.05)'
+                            }}
+                        >
+                            <div
+                                style={{
+                                    color: '#fff',
+                                    fontWeight: 'bold',
+                                    marginBottom: '6px'
+                                }}
+                            >
+                                {group.name}
+                            </div>
+
+                            {group.static_link ? (
+                                <a
+                                    href={group.static_link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="btn btn-success"
+                                    style={{
+                                        display: 'inline-block',
+                                        padding: '6px 12px',
+                                        textDecoration: 'none',
+                                        fontSize: '13px'
+                                    }}
+                                >
+                                    🎥 Подключиться
+                                </a>
+                            ) : (
+                                <span
+                                    style={{
+                                        color: '#8b949e',
+                                        fontSize: '13px'
+                                    }}
+                                >
+                                    Ссылка пока не назначена
+                                </span>
+                            )}
+                        </div>
+                    ))
+                )}
+            </div>
           </div>
         </div>
       </div>
@@ -965,7 +2570,7 @@ function DashboardPage({ user, setUser }) {
                         <p style={{ margin: '0 0 15px 0', color: '#c9d1d9', fontSize: '14px', lineHeight: '1.5' }}>{hw.description}</p>
                         
                         {hw.teacher_file && (
-                            <a href={`http://localhost:5000${hw.teacher_file}`} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: '15px', color: '#d29922', textDecoration: 'none', fontSize: '14px' }}>
+                            <a href={`http://${hw.teacher_file}`} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: '15px', color: '#d29922', textDecoration: 'none', fontSize: '14px' }}>
                                 📎 Скачать прикрепленный файл задания
                             </a>
                         )}
@@ -1036,9 +2641,41 @@ export default function App() {
       />
       <Routes>
         <Route path="/" element={<LandingPage user={user} />} />
-        <Route path="/login" element={<LoginPage user={user} setUser={setUser} />} />
-        <Route path="/dashboard" element={<DashboardPage user={user} setUser={setUser} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+
+        <Route
+          path="/login"
+          element={
+            <LoginPage
+              user={user}
+              setUser={setUser}
+            />
+          }
+        />
+
+        <Route
+          path="/forgot-password"
+          element={<ForgotPasswordPage />}
+        />
+
+        <Route
+          path="/reset-password/:token"
+          element={<ResetPasswordPage />}
+        />
+
+        <Route
+          path="/dashboard"
+          element={
+            <DashboardPage
+              user={user}
+              setUser={setUser}
+            />
+          }
+        />
+
+        <Route
+          path="*"
+          element={<Navigate to="/" replace />}
+        />
       </Routes>
     </Router>
   );
