@@ -63,6 +63,39 @@ const upload = multer({
     }
 });
 
+const authRateState = new Map();
+
+const rateLimit = (name, windowMs, maxRequests) => {
+    return (req, res, next) => {
+        const key = `${name}:${req.ip}`;
+        const now = Date.now();
+
+        const current = authRateState.get(key);
+
+        if (
+            !current ||
+            now - current.startedAt >= windowMs
+        ) {
+            authRateState.set(key, {
+                startedAt: now,
+                count: 1
+            });
+
+            return next();
+        }
+
+        if (current.count >= maxRequests) {
+            return res.status(429).json({
+                error: 'Слишком много запросов. Попробуйте немного позже.'
+            });
+        }
+
+        current.count += 1;
+
+        next();
+    };
+};
+
 // БД
 const pool = new Pool({
     connectionString: process.env.DB_URL,
@@ -80,7 +113,14 @@ pool.connect()
     .catch(err => console.error('❌ Ошибка подключения к БД:', err));
 
 // БОТ
-const bot = new BotConstructor(process.env.BOT_TOKEN, { polling: true });
+const botPollingEnabled =
+    process.env.NODE_ENV !== 'test' &&
+    process.env.BOT_POLLING !== 'false';
+
+const bot = new BotConstructor(
+    process.env.BOT_TOKEN,
+    { polling: botPollingEnabled }
+);
 
 bot.on('polling_error', (error) => {
     console.error('❌ TELEGRAM POLLING ERROR:', error.message);
@@ -324,9 +364,21 @@ bot.on('callback_query', async (q) => {
         }
 
         if (data === 'site_login') {
-            const token = Math.floor(100000 + Math.random() * 900000).toString(); 
-            await pool.query('UPDATE users SET site_token = $1 WHERE id = $2', [token, userId]);
-            bot.sendMessage(chatId, `🔐 Ваш одноразовый код для входа на сайт: *${token}*\n\nВведите его на главной странице сайта.`, { parse_mode: 'Markdown' });
+            const token = String(crypto.randomInt(100000, 1000000));
+
+            await pool.query(
+                `UPDATE users
+                SET site_token = $1,
+                    site_token_created_at = CURRENT_TIMESTAMP
+                WHERE id = $2`,
+                [token, userId]
+            );
+
+            await bot.sendMessage(
+                chatId,
+                `🔐 Ваш одноразовый код для входа на сайт: *${token}*\n\nВведите его на главной странице сайта.\n\nСрок действия: 10 минут.`,
+                { parse_mode: 'Markdown' }
+            );
         }
 
         if (data === 'get_link') {
@@ -484,47 +536,124 @@ const authenticateToken = (req, res, next) => {
     if (!token) return res.status(401).json({ error: 'Доступ запрещен. Нет токена.' });
 
     jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) return res.status(403).json({ error: 'Недействительный токен.' });
+        if (err) {
+            return res.status(401).json({
+                error: 'Недействительный токен.'
+            });
+        }
         req.user = user; 
         next();
     });
 };
 
 // ВХОД ПО ТГ-КОДУ
-app.post('/api/login', async (req, res) => {
-    const { token } = req.body;
-    try {
-        const result = await pool.query('SELECT id, email, first_name, role, lives, telegram_id, username FROM users WHERE site_token = $1', [token]);
-        if (result.rows.length > 0) {
-            const user = result.rows[0];
+app.post(
+    '/api/login',
+    rateLimit('login-code', 10 * 60 * 1000, 10),
+    async (req, res) => {
+        const token =
+            typeof req.body.token === 'string'
+                ? req.body.token.trim()
+                : '';
 
-            await pool.query('UPDATE users SET site_token = NULL WHERE id = $1', [user.id]);
-            
-            const authToken = jwt.sign(
-                { id: user.id, role: user.role }, 
-                JWT_SECRET, 
-                { expiresIn: '7d' }
+        if (!/^\d{6}$/.test(token)) {
+            return res.status(400).json({
+                error: 'Код должен состоять из 6 цифр.'
+            });
+        }
+
+        try {
+            const result = await pool.query(
+                `SELECT
+                    id,
+                    email,
+                    first_name,
+                    role,
+                    lives,
+                    telegram_id,
+                    username
+                 FROM users
+                 WHERE site_token = $1
+                   AND site_token_created_at >
+                       CURRENT_TIMESTAMP - INTERVAL '10 minutes'
+                 LIMIT 1`,
+                [token]
             );
 
-            res.json({ success: true, user: user, token: authToken });
-        } else {
-            res.status(401).json({ error: 'Неверный или устаревший код' });
+            if (result.rows.length === 0) {
+                return res.status(401).json({
+                    error: 'Неверный или устаревший код'
+                });
+            }
+
+            const user = result.rows[0];
+
+            const consumeRes = await pool.query(
+                `UPDATE users
+                 SET site_token = NULL,
+                     site_token_created_at = NULL
+                 WHERE id = $1
+                   AND site_token = $2
+                 RETURNING id`,
+                [user.id, token]
+            );
+
+            if (consumeRes.rowCount === 0) {
+                return res.status(401).json({
+                    error: 'Неверный или уже использованный код'
+                });
+            }
+
+            const authToken = jwt.sign(
+                {
+                    id: user.id,
+                    role: user.role
+                },
+                JWT_SECRET,
+                {
+                    expiresIn: '7d'
+                }
+            );
+
+            return res.json({
+                success: true,
+                user,
+                token: authToken
+            });
+        } catch (err) {
+            console.error('Ошибка входа по Telegram-коду:', err);
+
+            return res.status(500).json({
+                error: 'Ошибка сервера'
+            });
         }
-    } catch (err) {
-        res.status(500).json({ error: 'Ошибка сервера' });
     }
-});
+);
 
 // РЕГИСТРАЦИЯ ПО EMAIL
-app.post('/api/register', async (req, res) => {
+app.post(
+    '/api/register',
+    rateLimit('register', 15 * 60 * 1000, 5),
+    async (req, res) => {
+
     const { email, password, first_name, role } = req.body;
-    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const normalizedEmail =
+        typeof email === 'string'
+            ? email.trim().toLowerCase()
+            : '';
     const normalizedName = typeof first_name === 'string' ? first_name.trim() : '';
     const allowedRoles = ['student', 'parent', 'adult'];
     const safeRole = allowedRoles.includes(role) ? role : 'student';
 
-    if (!normalizedEmail || !normalizedName || typeof password !== 'string' || password.length < 6) {
-        return res.status(400).json({ error: 'Проверьте Email, имя и пароль (минимум 6 символов).' });
+    if (
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) ||
+        !normalizedName ||
+        typeof password !== 'string' ||
+        password.length < 6
+    ) {
+        return res.status(400).json({
+            error: 'Проверьте Email, имя и пароль (минимум 6 символов).'
+        });
     }
 
     try {
@@ -552,10 +681,29 @@ app.post('/api/register', async (req, res) => {
 });
 
 // ВХОД ПО EMAIL
-app.post('/api/login/email', async (req, res) => {
-    const { email, password } = req.body;
+app.post(
+
+    '/api/login/email',
+    rateLimit('email-login', 10 * 60 * 1000, 10),
+    async (req, res) => {
+        const email =
+            typeof req.body.email === 'string'
+                ? req.body.email.trim().toLowerCase()
+                : '';
+
+        const { password } = req.body;
+
+        if (!email || typeof password !== 'string') {
+            return res.status(400).json({
+                error: 'Введите Email и пароль.'
+            });
+        }
+
     try {
-        const result = await pool.query('SELECT id, email, first_name, role, lives, telegram_id, username, password_hash FROM users WHERE email = $1', [email]);
+        const result = await pool.query(
+            'SELECT id, email, first_name, role, lives, telegram_id, username, password_hash FROM users WHERE email = $1',
+            [email]
+        );
         if (result.rows.length === 0) {
             return res.status(401).json({ error: 'Пользователь не найден' });
         }
@@ -584,8 +732,21 @@ app.post('/api/login/email', async (req, res) => {
 });
 
 // СБРОС ПАРОЛЯ
-app.post('/api/forgot-password', async (req, res) => {
-    const { email } = req.body;
+app.post(
+    '/api/forgot-password',
+    rateLimit('forgot-password', 15 * 60 * 1000, 5),
+    async (req, res) => {
+
+    const email =
+        typeof req.body.email === 'string'
+            ? req.body.email.trim().toLowerCase()
+            : '';
+
+    if (!email) {
+        return res.status(400).json({
+            error: 'Введите корректный Email.'
+        });
+    }
     try {
         const user = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
         if (user.rows.length === 0) {
@@ -618,7 +779,11 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 });
 
-app.post('/api/reset-password', async (req, res) => {
+app.post(
+    '/api/reset-password',
+    rateLimit('reset-password', 15 * 60 * 1000, 5),
+    async (req, res) => {
+
     const { token, newPassword } = req.body;
 
     if (typeof token !== 'string' || !token || typeof newPassword !== 'string' || newPassword.length < 6) {
@@ -650,8 +815,25 @@ app.post('/api/reset-password', async (req, res) => {
 });
 
 // ПРИВЯЗКА TELEGRAM
-app.post('/api/link-telegram', authenticateToken, async (req, res) => {
+app.post(
+    '/api/link-telegram',
+    authenticateToken,
+    rateLimit('link-telegram', 15 * 60 * 1000, 10),
+    async (req, res) => {
+
     const { code } = req.body;
+
+    if (
+        typeof code !== 'string' ||
+        !/^\d{6}$/.test(code.trim())
+    ) {
+        return res.status(400).json({
+            error: 'Код должен состоять из 6 цифр.'
+        });
+    }
+
+    const normalizedCode = code.trim();
+
     const userId = req.user.id;
 
     try {
@@ -677,7 +859,12 @@ app.post('/api/link-telegram', authenticateToken, async (req, res) => {
         await pool.query('UPDATE users SET telegram_id = $1 WHERE id = $2', [telegramId, userId]);
         await pool.query('DELETE FROM auth_codes WHERE code = $1', [code]);
 
-        res.json({ success: true, message: 'Telegram успешно привязан!' });
+        res.json({
+            success: true,
+            message: 'Telegram успешно привязан!',
+            telegram_id: telegramId
+        });
+
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка сервера' });

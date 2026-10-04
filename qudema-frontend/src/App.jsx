@@ -16,6 +16,22 @@ axios.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
+axios.interceptors.response.use(
+    response => response,
+    error => {
+        if (error.response?.status === 401) {
+            localStorage.removeItem('qudema_user');
+            localStorage.removeItem('qudema_jwt');
+
+            if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+            }
+        }
+
+        return Promise.reject(error);
+    }
+);
+
 // ЛЕНДИНГ
 function LandingPage({ user }) {
   const fadeInUp = {
@@ -1033,7 +1049,7 @@ function DashboardPage({ user, setUser }) {
         setLinkTgMessage('✅ ' + res.data.message);
         setTgCode('');
         
-        const updatedUser = { ...user, telegram_id: 'linked' };
+        const updatedUser = { ...user, telegram_id: res.data.telegram_id };
         setUser(updatedUser);
         localStorage.setItem('qudema_user', JSON.stringify(updatedUser));
     } catch (err) {
