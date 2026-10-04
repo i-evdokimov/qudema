@@ -132,8 +132,8 @@ export default function LandingPage({ user }) {
     <div className="official-landing">
       <header className="landing-header">
         <div className="landing-shell landing-header-inner">
-          <a className="landing-brand" href="#top" aria-label="QUDEMA">
-            <span className="landing-brand-mark">Q</span>
+          <a className="landing-brand" href="#top" aria-label="КУДЕМА — официальный сайт центра">
+            <span className="landing-brand-mark" aria-hidden="true">Q</span>
             <span>
               <strong>КУДЕМА</strong>
               <small>Центр дополнительного образования</small>
@@ -144,12 +144,13 @@ export default function LandingPage({ user }) {
             className="landing-mobile-toggle"
             type="button"
             onClick={() => setMobileOpen((value) => !value)}
-            aria-label="Открыть меню"
+            aria-label={mobileOpen ? 'Закрыть меню' : 'Открыть меню'}
+            aria-expanded={mobileOpen}
           >
             {mobileOpen ? '×' : '☰'}
           </button>
 
-          <nav className={`landing-nav ${mobileOpen ? 'is-open' : ''}`}>
+          <nav className={`landing-nav ${mobileOpen ? 'is-open' : ''}`} aria-label="Основная навигация">
             <button type="button" onClick={() => navigateToSection('about')}>О центре</button>
             <button type="button" onClick={() => navigateToSection('documents')}>Документы</button>
             <button type="button" onClick={() => navigateToSection('materials')}>Полезные материалы</button>
@@ -159,11 +160,7 @@ export default function LandingPage({ user }) {
           </nav>
 
           <div className="landing-header-actions">
-            {user ? (
-              <Link className="landing-btn landing-btn-outline" to="/dashboard">Личный кабинет</Link>
-            ) : (
-              <Link className="landing-btn landing-btn-primary" to="/login">Личный кабинет</Link>
-            )}
+            <Link className="landing-btn landing-btn-outline" to="/dashboard">Личный кабинет</Link>
           </div>
         </div>
       </header>
@@ -386,18 +383,56 @@ export default function LandingPage({ user }) {
       <footer className="landing-footer">
         <div className="landing-shell">
           <div className="landing-footer-grid">
-            <div>
-              <div className="landing-brand landing-brand-footer">
-                <span className="landing-brand-mark">Q</span>
-                <span><strong>КУДЕМА</strong><small>Центр дополнительного образования</small></span>
-              </div>
-              <p>Центр дополнительного образования и развития компетенций.</p>
+            <div className="landing-footer-brand-column">
+              <a className="landing-brand landing-brand-footer" href="#top" aria-label="Вернуться наверх">
+                <span className="landing-brand-mark" aria-hidden="true">Q</span>
+                <span>
+                  <strong>КУДЕМА</strong>
+                  <small>Центр дополнительного образования</small>
+                </span>
+              </a>
+              <p className="landing-footer-lead">Центр дополнительного образования и развития компетенций.</p>
             </div>
-            <div><h4>Навигация</h4><button type="button" onClick={() => navigateToSection('about')}>О центре</button><button type="button" onClick={() => navigateToSection('programs')}>Программы до 18 лет</button><button type="button" onClick={() => navigateToSection('professional')}>Программы 18+</button><button type="button" onClick={() => navigateToSection('feedback')}>Обратная связь</button></div>
-            <div><h4>Контакты</h4><a href="tel:+79139415441">+7 (913) 941-54-41</a><a href="mailto:qudema@mail.ru">qudema@mail.ru</a><p>Кудряшова Евгения</p><p>630005, г. Новосибирск,<br />ул. Мичурина, 24</p></div>
-            <div className="landing-social"><h4>Мы в сети</h4><a href="https://t.me/+RdmaxmRsNcM4OTEy" target="_blank" rel="noreferrer">Telegram</a><a href="https://vk.ru/qudema" target="_blank" rel="noreferrer">ВКонтакте</a><div className="landing-qr-row"><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fqudema.ru%2F" alt="QR-код официального сайта QUDEMA" /><img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Ft.me%2F%2BRdmaxmRsNcM4OTEy" alt="QR-код Telegram QUDEMA" /></div></div>
+
+            <div>
+              <h4>Навигация</h4>
+              <button type="button" onClick={() => navigateToSection('about')}>О центре</button>
+              <button type="button" onClick={() => navigateToSection('programs')}>Программы до 18 лет</button>
+              <button type="button" onClick={() => navigateToSection('professional')}>Программы 18+</button>
+              <button type="button" onClick={() => navigateToSection('feedback')}>Обратная связь</button>
+            </div>
+
+            <div>
+              <h4>Контакты</h4>
+              <a className="landing-contact-main" href="tel:+79139415441">+7 (913) 941-54-41</a>
+              <a className="landing-contact-main" href="mailto:qudema@mail.ru">qudema@mail.ru</a>
+              <p>Кудряшова Евгения</p>
+              <p>630005, г. Новосибирск,<br />ул. Мичурина, 24</p>
+            </div>
+
+            <div className="landing-social">
+              <h4>Мы в сети</h4>
+              <div className="landing-social-links">
+                <a href="https://t.me/+RdmaxmRsNcM4OTEy" target="_blank" rel="noreferrer">Telegram</a>
+                <a href="https://vk.ru/qudema" target="_blank" rel="noreferrer">ВКонтакте</a>
+              </div>
+              <div className="landing-qr-row">
+                <a href="https://qudema.ru/" target="_blank" rel="noreferrer" className="landing-qr-card">
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fqudema.ru%2F" alt="QR-код официального сайта QUDEMA" />
+                  <span>Официальный сайт</span>
+                </a>
+                <a href="https://t.me/+RdmaxmRsNcM4OTEy" target="_blank" rel="noreferrer" className="landing-qr-card">
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Ft.me%2F%2BRdmaxmRsNcM4OTEy" alt="QR-код Telegram QUDEMA" />
+                  <span>Telegram QUDEMA</span>
+                </a>
+              </div>
+            </div>
           </div>
-          <div className="landing-footer-bottom"><span>© 2026 КУДЕМА</span><span>Официальный сайт центра</span></div>
+
+          <div className="landing-footer-bottom">
+            <span>© 2026 КУДЕМА</span>
+            <a href="#top">Официальный сайт центра</a>
+          </div>
         </div>
       </footer>
 
