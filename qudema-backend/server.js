@@ -63,6 +63,29 @@ const upload = multer({
     }
 });
 
+// Normalize Multer errors so the frontend receives a useful JSON message
+// instead of Express' default HTML error page.
+const handleSingleUpload = (fieldName) => (req, res, next) => {
+    upload.single(fieldName)(req, res, (err) => {
+        if (!err) return next();
+
+        if (err instanceof multer.MulterError) {
+            if (err.code === 'LIMIT_FILE_SIZE') {
+                return res.status(413).json({
+                    error: 'Файл превышает максимальный размер 10 МБ.'
+                });
+            }
+
+            return res.status(400).json({
+                error: `Не удалось загрузить файл: ${err.message}`
+            });
+        }
+
+        console.error('Ошибка загрузки файла:', err);
+        return res.status(400).json({ error: 'Не удалось обработать загруженный файл.' });
+    });
+};
+
 const authRateState = new Map();
 
 const rateLimit = (name, windowMs, maxRequests) => {
@@ -985,9 +1008,24 @@ app.post('/api/teacher/start-attendance', authenticateToken, async (req, res) =>
 
         const studentsRes = await client.query(`
             SELECT DISTINCT u.id, u.telegram_id, u.email, u.first_name
-            FROM student_groups sg
-            JOIN users u ON u.id = sg.student_id
-            WHERE sg.group_id = $1 AND u.role = 'student'
+            FROM users u
+            WHERE u.role = 'student'
+              AND (
+                EXISTS (
+                    SELECT 1
+                    FROM student_groups sg
+                    WHERE sg.student_id = u.id
+                      AND sg.group_id = $1
+                )
+                OR (
+                    u.group_id = $1
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM student_groups sg_legacy
+                        WHERE sg_legacy.student_id = u.id
+                    )
+                )
+              )
             ORDER BY u.first_name, u.id
         `, [groupId]);
 
@@ -1335,13 +1373,31 @@ app.post('/api/student/submit-attendance', authenticateToken, async (req, res) =
                 SELECT a.session_id
                 FROM attendance a
                 JOIN attendance_sessions s ON s.id = a.session_id
-                JOIN student_groups sg
-                  ON sg.student_id = a.student_id
-                 AND sg.group_id = a.group_id
                 WHERE a.student_id = $1
                   AND a.group_id = $2
                   AND a.status = 'pending'
                   AND s.status = 'active'
+                  AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM student_groups sg
+                        WHERE sg.student_id = a.student_id
+                          AND sg.group_id = a.group_id
+                    )
+                    OR (
+                        NOT EXISTS (
+                            SELECT 1
+                            FROM student_groups sg_legacy
+                            WHERE sg_legacy.student_id = a.student_id
+                        )
+                        AND EXISTS (
+                            SELECT 1
+                            FROM users u
+                            WHERE u.id = a.student_id
+                              AND u.group_id = a.group_id
+                        )
+                    )
+                  )
                 ORDER BY s.created_at DESC
                 LIMIT 1
             `, [studentId, groupId]);
@@ -1357,11 +1413,29 @@ app.post('/api/student/submit-attendance', authenticateToken, async (req, res) =
             SELECT a.id, a.group_id, a.status, s.status AS session_status
             FROM attendance a
             JOIN attendance_sessions s ON s.id = a.session_id
-            JOIN student_groups sg
-              ON sg.student_id = a.student_id
-             AND sg.group_id = a.group_id
             WHERE a.session_id = $1
               AND a.student_id = $2
+              AND (
+                EXISTS (
+                    SELECT 1
+                    FROM student_groups sg
+                    WHERE sg.student_id = a.student_id
+                      AND sg.group_id = a.group_id
+                )
+                OR (
+                    NOT EXISTS (
+                        SELECT 1
+                        FROM student_groups sg_legacy
+                        WHERE sg_legacy.student_id = a.student_id
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = a.student_id
+                          AND u.group_id = a.group_id
+                    )
+                )
+              )
         `, [sessionId, studentId]);
 
         if (attendanceRes.rows.length === 0) {
@@ -1420,12 +1494,30 @@ app.get('/api/student/attendance-status/all', authenticateToken, async (req, res
             FROM attendance a
             JOIN attendance_sessions s ON s.id = a.session_id
             JOIN groups g ON g.id = a.group_id
-            JOIN student_groups sg
-              ON sg.student_id = a.student_id
-             AND sg.group_id = a.group_id
             WHERE a.student_id = $1
               AND a.status = 'pending'
               AND s.status = 'active'
+              AND (
+                EXISTS (
+                    SELECT 1
+                    FROM student_groups sg
+                    WHERE sg.student_id = a.student_id
+                      AND sg.group_id = a.group_id
+                )
+                OR (
+                    NOT EXISTS (
+                        SELECT 1
+                        FROM student_groups sg_legacy
+                        WHERE sg_legacy.student_id = a.student_id
+                    )
+                    AND EXISTS (
+                        SELECT 1
+                        FROM users u
+                        WHERE u.id = a.student_id
+                          AND u.group_id = a.group_id
+                    )
+                )
+              )
             ORDER BY s.created_at DESC, a.id DESC
         `, [req.user.id]);
 
@@ -1803,6 +1895,14 @@ app.get('/api/teacher/groups/:groupId/available-students', authenticateToken, as
                   WHERE sg.student_id = u.id
                     AND sg.group_id = $1
               )
+              AND NOT (
+                  u.group_id = $1
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM student_groups sg_legacy
+                      WHERE sg_legacy.student_id = u.id
+                  )
+              )
             ORDER BY u.first_name, u.id
         `, [groupId]);
 
@@ -1875,6 +1975,24 @@ app.post('/api/teacher/groups/:groupId/students', authenticateToken, async (req,
             return res.status(404).json({
                 error: 'Ученик не найден'
             });
+        }
+
+        // Переносим старую связь users.group_id в student_groups до добавления
+        // следующей группы. Иначе первая (legacy) группа может потеряться.
+        const legacyGroupRes = await client.query(`
+            SELECT group_id
+            FROM users
+            WHERE id = $1 AND group_id IS NOT NULL
+            FOR UPDATE
+        `, [studentId]);
+
+        const legacyGroupId = legacyGroupRes.rows[0]?.group_id;
+        if (legacyGroupId) {
+            await client.query(`
+                INSERT INTO student_groups (student_id, group_id)
+                VALUES ($1, $2)
+                ON CONFLICT (student_id, group_id) DO NOTHING
+            `, [studentId, legacyGroupId]);
         }
 
         // Основная новая связь
@@ -1971,7 +2089,15 @@ app.delete('/api/teacher/groups/:groupId/students/:studentId', authenticateToken
             RETURNING student_id
         `, [studentId, groupId]);
 
-        if (deleteRes.rowCount === 0) {
+        const legacyMembershipRes = await client.query(`
+            SELECT 1
+            FROM users
+            WHERE id = $1
+              AND role = 'student'
+              AND group_id = $2
+        `, [studentId, groupId]);
+
+        if (deleteRes.rowCount === 0 && legacyMembershipRes.rowCount === 0) {
             await client.query('ROLLBACK');
 
             return res.status(404).json({
@@ -2123,7 +2249,7 @@ app.post('/api/update-class-link', authenticateToken, async (req, res) => {
 });
 
 // СОЗДАНИЕ ДЗ УЧИТЕЛЕМ
-app.post('/api/homeworks/create', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/homeworks/create', authenticateToken, handleSingleUpload('file'), async (req, res) => {
     const { groupId, title, description, deadline } = req.body;
     const teacherId = req.user.id; 
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : null;
@@ -2388,7 +2514,7 @@ app.get('/api/student/homeworks', authenticateToken, async (req, res) => {
 });
 
 // СДАЧА РЕШЕНИЯ УЧЕНИКОМ
-app.post('/api/submissions/submit', authenticateToken, upload.single('file'), async (req, res) => {
+app.post('/api/submissions/submit', authenticateToken, handleSingleUpload('file'), async (req, res) => {
     if (req.user.role !== 'student') {
         return res.status(403).json({ error: 'Доступ только для учеников' });
     }

@@ -1318,6 +1318,11 @@ function DashboardPage({ user, setUser }) {
   const handleSubmitSpecificHomework = async (e, homeworkId) => {
     e.preventDefault();
     const submissionData = activeSubmissions[homeworkId] || {};
+
+    if (submissionData.file && submissionData.file.size > 10 * 1024 * 1024) {
+      toast.error('Файл слишком большой. Максимальный размер — 10 МБ.');
+      return;
+    }
     
     if (!submissionData.link && !submissionData.file) {
         toast.error('Прикрепите файл или вставьте ссылку!');
@@ -1336,7 +1341,10 @@ function DashboardPage({ user, setUser }) {
       const res = await axios.get('/api/student/homeworks');
       setStudentHomeworks(res.data);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Ошибка при отправке задания');
+      const errorMessage = err.response?.status === 413
+        ? 'Файл слишком большой. Максимальный размер — 10 МБ.'
+        : (err.response?.data?.error || 'Ошибка при отправке задания');
+      toast.error(errorMessage);
     }
   };
 
@@ -1374,6 +1382,13 @@ function DashboardPage({ user, setUser }) {
     e.preventDefault();
     setCreateHwMessage('');
 
+    if (hwTeacherFile && hwTeacherFile.size > 10 * 1024 * 1024) {
+      const message = 'Файл слишком большой. Максимальный размер — 10 МБ.';
+      setCreateHwMessage('❌ ' + message);
+      toast.error(message);
+      return;
+    }
+
     const formData = new FormData();
     formData.append('groupId', selectedGroupHw);
     formData.append('title', hwTitle);
@@ -1390,7 +1405,11 @@ function DashboardPage({ user, setUser }) {
         setHwTeacherFile(null);
         fetchStudents();
     } catch (err) {
-        setCreateHwMessage('❌ ' + (err.response?.data?.error || 'Ошибка при создании задания'));
+        const errorMessage = err.response?.status === 413
+          ? 'Файл слишком большой. Максимальный размер — 10 МБ.'
+          : (err.response?.data?.error || 'Ошибка при создании задания');
+        setCreateHwMessage('❌ ' + errorMessage);
+        toast.error(errorMessage);
     }
   };
 
@@ -1625,7 +1644,7 @@ function DashboardPage({ user, setUser }) {
               Опубликовать задание
             </button>
           </form>
-          {createHwMessage && <p style={{ marginTop: '15px', color: '#3fb950', fontWeight: 'bold' }}>{createHwMessage}</p>}
+          {createHwMessage && <p style={{ marginTop: '15px', color: createHwMessage.startsWith('❌') ? '#ff7b72' : '#3fb950', fontWeight: 'bold' }}>{createHwMessage}</p>}
         </div>
 
         {/* ГРУППЫ И УЧЕНИКИ */}
