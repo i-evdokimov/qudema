@@ -126,6 +126,36 @@ bot.on('polling_error', (error) => {
     console.error('❌ TELEGRAM POLLING ERROR:', error.message);
 });
 
+// Telegram — основной канал. Если Telegram не привязан или отправка не удалась,
+// используем электронную почту при наличии адреса и настроенного SMTP.
+async function sendUserNotification(user, { subject, text, telegramOptions } = {}) {
+    if (user?.telegram_id) {
+        try {
+            await bot.sendMessage(user.telegram_id, text, telegramOptions || {});
+            return 'telegram';
+        } catch (err) {
+            console.error(`Не удалось отправить Telegram-уведомление пользователю ${user.id || ''}:`, err.message);
+        }
+    }
+
+    if (user?.email && process.env.SMTP_USER && process.env.SMTP_PASS && MAIL_FROM) {
+        try {
+            await transporter.sendMail({
+                from: MAIL_FROM,
+                to: user.email,
+                subject: subject || 'Уведомление QUDEMA',
+                text
+            });
+            return 'email';
+        } catch (err) {
+            console.error(`Не удалось отправить email пользователю ${user.id || user.email}:`, err.message);
+        }
+    }
+
+    console.warn(`Для пользователя ${user?.id || user?.email || 'unknown'} нет доступного канала уведомления.`);
+    return 'unavailable';
+}
+
 // меню бота
 const getMainMenu = (lives) => {
     return {
@@ -875,74 +905,54 @@ app.post(
 async function sendAttendanceStatusToTeacher(sessionId) {
     try {
         const sessionRes = await pool.query(`
-            SELECT
-                s.id,
-                s.group_id,
-                s.status AS session_status,
-                g.teacher_id,
-                g.name AS group_name
+            SELECT s.id, s.group_id, s.status AS session_status,
+                   g.teacher_id, g.name AS group_name
             FROM attendance_sessions s
             JOIN groups g ON g.id = s.group_id
             WHERE s.id = $1
         `, [sessionId]);
-
         if (sessionRes.rows.length === 0) return;
-
         const session = sessionRes.rows[0];
         if (!session.teacher_id) return;
 
         const teacherRes = await pool.query(
-            'SELECT telegram_id FROM users WHERE id = $1',
+            'SELECT id, telegram_id, email FROM users WHERE id = $1',
             [session.teacher_id]
         );
-
-        if (teacherRes.rows.length === 0 || !teacherRes.rows[0].telegram_id) return;
+        if (teacherRes.rows.length === 0) return;
+        const teacher = teacherRes.rows[0];
 
         const statsRes = await pool.query(`
-            SELECT
-                COUNT(*) AS total,
-                COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed,
-                COUNT(*) FILTER (WHERE status = 'absent') AS absent,
-                COUNT(*) FILTER (WHERE status = 'pending') AS pending
-            FROM attendance
-            WHERE session_id = $1
+            SELECT COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed,
+                   COUNT(*) FILTER (WHERE status = 'absent') AS absent,
+                   COUNT(*) FILTER (WHERE status = 'pending') AS pending
+            FROM attendance WHERE session_id = $1
         `, [sessionId]);
-
         const { total, confirmed, absent, pending } = statsRes.rows[0];
         const pendingCount = Number(pending);
+        let messageText;
 
         if (pendingCount === 0) {
-            // Закрываем сессию атомарно. Если её уже закрыл другой запрос,
-            // повторное финальное уведомление преподавателю не отправляем.
             const closeRes = await pool.query(`
                 UPDATE attendance_sessions
                 SET status = 'closed', closed_at = CURRENT_TIMESTAMP
                 WHERE id = $1 AND status = 'active'
                 RETURNING id
             `, [sessionId]);
-
             if (closeRes.rows.length === 0) return;
 
-            if (Number(absent) === 0) {
-                await bot.sendMessage(
-                    teacherRes.rows[0].telegram_id,
-                    `🎉 *Все пришли!* Группа *${session.group_name}* (${confirmed} из ${total} учеников) подтвердила участие в занятии!`,
-                    { parse_mode: 'Markdown' }
-                );
-            } else {
-                await bot.sendMessage(
-                    teacherRes.rows[0].telegram_id,
-                    `📊 *Опрос завершен для группы ${session.group_name}!*\n\n🟢 Придут: *${confirmed}*\n🔴 Пропустят: *${absent}*\n\nСписок пропусков и причины доступны в личном кабинете на сайте.`,
-                    { parse_mode: 'Markdown' }
-                );
-            }
+            messageText = Number(absent) === 0
+                ? `Все ученики группы «${session.group_name}» подтвердили присутствие: ${confirmed} из ${total}.`
+                : `Опрос группы «${session.group_name}» завершён. Придут: ${confirmed}; пропустят: ${absent}. Подробности доступны в личном кабинете.`;
         } else {
-            await bot.sendMessage(
-                teacherRes.rows[0].telegram_id,
-                `⚡ *Обновление посещаемости (${session.group_name}):*\nПодтвердилось: *${confirmed}* из *${total}* учеников.\nОсталось дождаться: ${pendingCount}.`,
-                { parse_mode: 'Markdown' }
-            );
+            messageText = `Обновление посещаемости группы «${session.group_name}»: подтвердили ${confirmed} из ${total}. Ответа ожидают от ${pendingCount}.`;
         }
+
+        await sendUserNotification(teacher, {
+            subject: `Посещаемость — ${session.group_name}`,
+            text: messageText
+        });
     } catch (err) {
         console.error('Ошибка отправки уведомления преподавателю:', err);
     }
@@ -974,11 +984,10 @@ app.post('/api/teacher/start-attendance', authenticateToken, async (req, res) =>
         }
 
         const studentsRes = await client.query(`
-            SELECT DISTINCT u.id, u.telegram_id, u.first_name
+            SELECT DISTINCT u.id, u.telegram_id, u.email, u.first_name
             FROM student_groups sg
             JOIN users u ON u.id = sg.student_id
-            WHERE sg.group_id = $1
-              AND u.role = 'student'
+            WHERE sg.group_id = $1 AND u.role = 'student'
             ORDER BY u.first_name, u.id
         `, [groupId]);
 
@@ -989,14 +998,14 @@ app.post('/api/teacher/start-attendance', authenticateToken, async (req, res) =>
         const activeSessionRes = await client.query(`
             SELECT id
             FROM attendance_sessions
-            WHERE group_id = $1
-            AND status = 'active'
+            WHERE group_id = $1 AND status = 'active'
             LIMIT 1
         `, [groupId]);
 
         if (activeSessionRes.rows.length > 0) {
             return res.status(409).json({
-                error: 'Для этой группы уже запущен активный опрос.'
+                error: 'Для этой группы уже запущен активный опрос.',
+                sessionId: Number(activeSessionRes.rows[0].id)
             });
         }
 
@@ -1021,25 +1030,19 @@ app.post('/api/teacher/start-attendance', authenticateToken, async (req, res) =>
         await client.query('COMMIT');
 
         for (const student of studentsRes.rows) {
-            if (!student.telegram_id) continue;
-
-            try {
-                await bot.sendMessage(
-                    student.telegram_id,
-                    `🗓 *Подтверждение занятия!*\n\n${student.first_name}, преподаватель просит подтвердить ваше присутствие на занятии.`,
-                    {
-                        parse_mode: 'Markdown',
-                        reply_markup: {
-                            inline_keyboard: [[
-                                { text: '✅ Я приду', callback_data: `att_yes_${session.id}` },
-                                { text: '❌ Не смогу', callback_data: `att_no_${session.id}` }
-                            ]]
-                        }
+            const messageText = `Подтверждение занятия для ${student.first_name}. Пожалуйста, откройте личный кабинет и подтвердите присутствие: ${FRONTEND_URL}/dashboard`;
+            await sendUserNotification(student, {
+                subject: 'Подтвердите присутствие на занятии',
+                text: messageText,
+                telegramOptions: {
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '✅ Я приду', callback_data: `att_yes_${session.id}` },
+                            { text: '❌ Не смогу', callback_data: `att_no_${session.id}` }
+                        ]]
                     }
-                );
-            } catch (botErr) {
-                console.log(`Не удалось отправить опрос пользователю ${student.telegram_id}`);
-            }
+                }
+            });
         }
 
         res.json({
@@ -1065,6 +1068,26 @@ app.post('/api/teacher/start-attendance', authenticateToken, async (req, res) =>
         res.status(500).json({ error: 'Ошибка сервера при запуске опроса' });
     } finally {
         client.release();
+    }
+});
+
+// Список активных опросов всех групп преподавателя. Используется для восстановления интерфейса.
+app.get('/api/teacher/attendance/active', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'teacher') {
+        return res.status(403).json({ error: 'Доступ только для преподавателя' });
+    }
+    try {
+        const result = await pool.query(`
+            SELECT s.id, s.created_at, g.name AS group_name
+            FROM attendance_sessions s
+            JOIN groups g ON g.id = s.group_id
+            WHERE g.teacher_id = $1 AND s.status = 'active'
+            ORDER BY s.created_at DESC
+        `, [req.user.id]);
+        res.json(result.rows.map(row => ({ id: Number(row.id), group_name: row.group_name })));
+    } catch (err) {
+        console.error('Ошибка загрузки активных опросов:', err);
+        res.status(500).json({ error: 'Не удалось загрузить активные опросы' });
     }
 });
 
@@ -2124,35 +2147,132 @@ app.post('/api/homeworks/create', authenticateToken, upload.single('file'), asyn
         );
 
         const studentsRes = await pool.query(`
-            SELECT DISTINCT u.id, u.telegram_id
+            SELECT DISTINCT u.id, u.telegram_id, u.email, u.first_name
             FROM users u
             WHERE u.role = 'student'
               AND (
-                u.group_id = $1
-                OR EXISTS (
-                    SELECT 1 FROM student_groups sg
-                    WHERE sg.student_id = u.id AND sg.group_id = $1
+                EXISTS (SELECT 1 FROM student_groups sg WHERE sg.student_id = u.id AND sg.group_id = $1)
+                OR (
+                  NOT EXISTS (SELECT 1 FROM student_groups sg2 WHERE sg2.student_id = u.id)
+                  AND u.group_id = $1
                 )
               )
         `, [parsedGroupId]);
-        
+
         for (const student of studentsRes.rows) {
-            if (!student.telegram_id) continue;
-            try {
-                await bot.sendMessage(
-                    student.telegram_id, 
-                    `📚 *Новое задание:*\n${title}\n\nЗайдите в личный кабинет, чтобы посмотреть детали и сдать работу.`,
-                    { parse_mode: 'Markdown' }
-                );
-            } catch (botErr) {
-                console.log(`Не удалось отправить ТГ-уведомление ученику с ID: ${student.id}`);
-            }
+            await sendUserNotification(student, {
+                subject: `Новое домашнее задание: ${String(title).trim()}`,
+                text: `В группе опубликовано новое домашнее задание: ${String(title).trim()}. Откройте личный кабинет, чтобы посмотреть описание и срок сдачи: ${FRONTEND_URL}/dashboard`
+            });
         }
 
         res.json({ success: true, message: 'Задание создано и отправлено ученикам группы!' });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка создания задания' });
+    }
+});
+
+// МАТЕРИАЛЫ И ЗАПИСИ ЗАНЯТИЙ ДЛЯ ГРУПП
+app.get('/api/teacher/groups/:groupId/materials', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Доступ только для преподавателя.' });
+    const groupId = Number(req.params.groupId);
+    if (!Number.isInteger(groupId) || groupId <= 0) return res.status(400).json({ error: 'Некорректная группа.' });
+    try {
+        const owned = await pool.query('SELECT 1 FROM groups WHERE id = $1 AND teacher_id = $2', [groupId, req.user.id]);
+        if (owned.rowCount === 0) return res.status(404).json({ error: 'Группа не найдена или не принадлежит вам.' });
+        const result = await pool.query('SELECT id, title, url, created_at FROM group_materials WHERE group_id = $1 ORDER BY created_at DESC, id DESC', [groupId]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Ошибка загрузки материалов группы:', err);
+        res.status(500).json({ error: 'Ошибка загрузки материалов группы.' });
+    }
+});
+
+app.post('/api/teacher/groups/:groupId/materials', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Доступ только для преподавателя.' });
+    const groupId = Number(req.params.groupId);
+    const title = typeof req.body.title === 'string' ? req.body.title.trim() : '';
+    const url = typeof req.body.url === 'string' ? req.body.url.trim() : '';
+    if (!Number.isInteger(groupId) || groupId <= 0 || !title || title.length > 160) {
+        return res.status(400).json({ error: 'Укажите группу и название материала (до 160 символов).' });
+    }
+    try {
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Unsupported protocol');
+    } catch {
+        return res.status(400).json({ error: 'Вставьте действующую ссылку, начинающуюся с https:// или http://.' });
+    }
+    try {
+        const owned = await pool.query('SELECT name FROM groups WHERE id = $1 AND teacher_id = $2', [groupId, req.user.id]);
+        if (owned.rowCount === 0) return res.status(404).json({ error: 'Группа не найдена или не принадлежит вам.' });
+        const result = await pool.query(
+            'INSERT INTO group_materials (group_id, created_by, title, url) VALUES ($1, $2, $3, $4) RETURNING id, title, url, created_at',
+            [groupId, req.user.id, title, url]
+        );
+        const students = await pool.query(`
+            SELECT DISTINCT u.id, u.first_name, u.email, u.telegram_id
+            FROM users u
+            WHERE u.role = 'student' AND (
+                EXISTS (SELECT 1 FROM student_groups sg WHERE sg.student_id = u.id AND sg.group_id = $1)
+                OR (NOT EXISTS (SELECT 1 FROM student_groups sg2 WHERE sg2.student_id = u.id) AND u.group_id = $1)
+            )
+        `, [groupId]);
+        for (const student of students.rows) {
+            await sendUserNotification(student, {
+                subject: `Новый материал: ${title}`,
+                text: `В группе «${owned.rows[0].name}» появился новый материал: ${title}. Открыть личный кабинет: ${FRONTEND_URL}/dashboard`
+            });
+        }
+        res.status(201).json({ success: true, material: result.rows[0] });
+    } catch (err) {
+        console.error('Ошибка добавления материала:', err);
+        res.status(500).json({ error: 'Не удалось добавить материал.' });
+    }
+});
+
+app.delete('/api/teacher/groups/:groupId/materials/:materialId', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'teacher') return res.status(403).json({ error: 'Доступ только для преподавателя.' });
+    const groupId = Number(req.params.groupId);
+    const materialId = Number(req.params.materialId);
+    if (!Number.isInteger(groupId) || !Number.isInteger(materialId) || groupId <= 0 || materialId <= 0) {
+        return res.status(400).json({ error: 'Некорректная группа или материал.' });
+    }
+    try {
+        const result = await pool.query(`
+            DELETE FROM group_materials gm
+            USING groups g
+            WHERE gm.id = $1 AND gm.group_id = $2 AND g.id = gm.group_id AND g.teacher_id = $3
+            RETURNING gm.id
+        `, [materialId, groupId, req.user.id]);
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Материал не найден или группа не принадлежит вам.' });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Ошибка удаления материала:', err);
+        res.status(500).json({ error: 'Не удалось удалить материал.' });
+    }
+});
+
+app.get('/api/student/materials', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'student') return res.status(403).json({ error: 'Доступ только для учеников.' });
+    try {
+        const result = await pool.query(`
+            SELECT gm.id, gm.title, gm.url, gm.created_at, gm.group_id, g.name AS group_name
+            FROM group_materials gm
+            JOIN groups g ON g.id = gm.group_id
+            WHERE EXISTS (
+                SELECT 1 FROM student_groups sg
+                WHERE sg.student_id = $1 AND sg.group_id = gm.group_id
+            ) OR (
+                NOT EXISTS (SELECT 1 FROM student_groups sg2 WHERE sg2.student_id = $1)
+                AND gm.group_id = (SELECT group_id FROM users WHERE id = $1)
+            )
+            ORDER BY gm.created_at DESC, gm.id DESC
+        `, [req.user.id]);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('Ошибка получения материалов ученика:', err);
+        res.status(500).json({ error: 'Не удалось загрузить материалы.' });
     }
 });
 
@@ -2368,6 +2488,7 @@ app.post('/api/homework/review', authenticateToken, async (req, res) => {
             SELECT
                 s.status AS old_status,
                 u.telegram_id,
+                u.email,
                 u.first_name,
                 u.lives
             FROM submissions s
@@ -2433,23 +2554,20 @@ app.post('/api/homework/review', authenticateToken, async (req, res) => {
 
         await client.query('COMMIT');
 
-        if (submission.telegram_id) {
-            let messageText = status === 'checked'
-                ? '🎉 Ваше домашнее задание успешно проверено и принято! ✅'
-                : shouldDeductLife
-                    ? `⚠️ Ваше домашнее задание было отклонено. ❌\nУ вас списана 1 жизнь. Осталось жизней: ❤️ ${livesRemaining}`
-                    : `⚠️ Ваша работа по-прежнему отклонена. ❌\nОсталось жизней: ❤️ ${livesRemaining}`;
-
-            if (feedback) {
-                messageText += `\n\n💬 Комментарий преподавателя:\n${feedback}`;
-            }
-
-            try {
-                await bot.sendMessage(submission.telegram_id, messageText);
-            } catch (botErr) {
-                console.error('Не удалось отправить сообщение в Telegram:', botErr.message);
-            }
-        }
+        let messageText = status === 'checked'
+            ? 'Ваше домашнее задание проверено и принято.'
+            : shouldDeductLife
+                ? `Домашнее задание отклонено. Списана 1 жизнь. Осталось жизней: ${livesRemaining}.`
+                : `Работа отклонена. Осталось жизней: ${livesRemaining}.`;
+        if (feedback) messageText += `\n\nКомментарий преподавателя: ${feedback}`;
+        await sendUserNotification({
+            id: studentId,
+            telegram_id: submission.telegram_id,
+            email: submission.email
+        }, {
+            subject: status === 'checked' ? 'Домашнее задание принято' : 'Комментарий к домашнему заданию',
+            text: messageText
+        });
 
         res.json({
             success: true,
