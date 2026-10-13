@@ -910,7 +910,12 @@ function DashboardPage({ user, setUser }) {
   const [availableStudents, setAvailableStudents] = useState([]);
   const [selectedStudentToAdd, setSelectedStudentToAdd] = useState('');
   const [groupActionMessage, setGroupActionMessage] = useState('');
-  const [teacherAttendance, setTeacherAttendance] = useState(null);
+  const [teacherAttendances, setTeacherAttendances] = useState([]);
+  const [groupMaterials, setGroupMaterials] = useState([]);
+  const [materialTitle, setMaterialTitle] = useState('');
+  const [materialUrl, setMaterialUrl] = useState('');
+  const [materialMessage, setMaterialMessage] = useState('');
+  const [studentMaterials, setStudentMaterials] = useState([]);
 
   const [hwTitle, setHwTitle] = useState('');
   const [hwDesc, setHwDesc] = useState('');
@@ -964,61 +969,49 @@ function DashboardPage({ user, setUser }) {
       });
 
       setAttMessage('🚀 ' + res.data.message);
-      setTeacherAttendance(null);
-
-      await fetchTeacherAttendance(
-        res.data.sessionId
-      );
+      // Не очищаем другие опросы: каждая группа сохраняет свою панель.
+      await fetchTeacherAttendance(res.data.sessionId);
 
       toast.success('Опрос запущен!');
     } catch (err) {
-      setAttMessage(
-        '❌ ' +
-        (err.response?.data?.error || 'Ошибка запуска')
-      );
+      const existingSessionId = err.response?.data?.sessionId;
+      if (err.response?.status === 409 && existingSessionId) {
+        await fetchTeacherAttendance(existingSessionId);
+        setAttMessage('ℹ️ Для этой группы уже идёт опрос. Его панель восстановлена ниже.');
+        return;
+      }
+      setAttMessage('❌ ' + (err.response?.data?.error || 'Ошибка запуска'));
     }
   };
 
-  const handleCloseAttendance = async () => {
-    if (!teacherAttendance?.session?.id) return;
-
+  const handleCloseAttendance = async (sessionId) => {
+    if (!sessionId) return;
     try {
-      const response = await axios.post(
-        `/api/teacher/attendance/${teacherAttendance.session.id}/close`
-      );
-
+      const response = await axios.post(`/api/teacher/attendance/${sessionId}/close`);
+      setTeacherAttendances(prev => prev.filter(item => Number(item.session?.id) !== Number(sessionId)));
       toast.success('Перекличка закрыта');
-
-      await fetchTeacherAttendance(
-        teacherAttendance.session.id
-      );
-
-      setAttMessage(
-        '✅ ' + response.data.message
-      );
-
+      setAttMessage('✅ ' + response.data.message);
     } catch (err) {
-      toast.error(
-        err.response?.data?.error ||
-        'Ошибка закрытия переклички'
-      );
+      toast.error(err.response?.data?.error || 'Ошибка закрытия переклички');
     }
   };
 
   const fetchTeacherAttendance = async (sessionId) => {
-    if (!sessionId) return;
-
+    if (!sessionId) return null;
     try {
-      const response = await axios.get(
-        `/api/teacher/attendance/${sessionId}`
-      );
-
-      setTeacherAttendance(response.data);
+      const response = await axios.get(`/api/teacher/attendance/${sessionId}`);
+      const attendanceData = response.data;
+      setTeacherAttendances(prev => {
+        const others = prev.filter(item => Number(item.session?.id) !== Number(sessionId));
+        if (attendanceData.session?.status !== 'active') return others;
+        return [attendanceData, ...others].sort((a, b) =>
+          new Date(b.session?.created_at || 0) - new Date(a.session?.created_at || 0)
+        );
+      });
+      return attendanceData;
     } catch (err) {
-      console.error(
-        'Ошибка получения результатов переклички:',
-        err
-      );
+      console.error('Ошибка получения результатов переклички:', err);
+      return null;
     }
   };
 
@@ -1052,15 +1045,17 @@ function DashboardPage({ user, setUser }) {
 
       const loadStudentData = async () => {
           try {
-              const [groupsRes, homeworksRes, attendanceRes] = await Promise.all([
+              const [groupsRes, homeworksRes, attendanceRes, materialsRes] = await Promise.all([
                   axios.get('/api/student/groups'),
                   axios.get('/api/student/homeworks'),
-                  axios.get('/api/student/attendance-status/all')
+                  axios.get('/api/student/attendance-status/all'),
+                  axios.get('/api/student/materials')
               ]);
 
               setStudentGroups(groupsRes.data);
               setStudentHomeworks(homeworksRes.data);
               setActiveAttendance(attendanceRes.data);
+              setStudentMaterials(materialsRes.data || []);
           } catch (err) {
               console.error('Ошибка загрузки данных ученика:', err);
           }
@@ -1137,6 +1132,53 @@ function DashboardPage({ user, setUser }) {
     fetchGroups();
   }, [fetchStudents, fetchGroups]);
 
+  // Восстанавливаем все активные переклички после обновления страницы.
+  useEffect(() => {
+    if (!user || user.role !== 'teacher') return;
+    let cancelled = false;
+    const restoreActiveAttendance = async () => {
+      try {
+        const response = await axios.get('/api/teacher/attendance/active');
+        const details = await Promise.all((response.data || []).map(async item => {
+          try {
+            const detail = await axios.get(`/api/teacher/attendance/${item.id}`);
+            return detail.data;
+          } catch {
+            return null;
+          }
+        }));
+        if (!cancelled) {
+          setTeacherAttendances(details.filter(item => item?.session?.status === 'active'));
+        }
+      } catch (err) {
+        console.error('Не удалось восстановить активные переклички:', err);
+      }
+    };
+    restoreActiveAttendance();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  // Обновляем ответы учеников, пока опрос активен.
+  useEffect(() => {
+    if (!user || user.role !== 'teacher' || teacherAttendances.length === 0) return;
+    const timer = window.setInterval(() => {
+      teacherAttendances.forEach(item => {
+        const sessionId = item.session?.id;
+        if (!sessionId) return;
+        axios.get(`/api/teacher/attendance/${sessionId}`)
+          .then(response => {
+            const fresh = response.data;
+            setTeacherAttendances(prev => {
+              const others = prev.filter(row => Number(row.session?.id) !== Number(sessionId));
+              return fresh.session?.status === 'active' ? [fresh, ...others] : others;
+            });
+          })
+          .catch(err => console.error('Не удалось обновить перекличку:', err));
+      });
+    }, 10000);
+    return () => window.clearInterval(timer);
+  }, [user, teacherAttendances]);
+
   useEffect(() => {
     if (
       user &&
@@ -1146,6 +1188,24 @@ function DashboardPage({ user, setUser }) {
       fetchAvailableStudents(selectedTeacherGroup);
     }
   }, [selectedTeacherGroup, user, fetchAvailableStudents]);
+
+  // Загружаем архив записей для выбранной группы преподавателя.
+  useEffect(() => {
+    if (!user || user.role !== 'teacher' || !selectedTeacherGroup) {
+      setGroupMaterials([]);
+      return;
+    }
+    let cancelled = false;
+    axios.get(`/api/teacher/groups/${selectedTeacherGroup}/materials`)
+      .then(response => { if (!cancelled) setGroupMaterials(response.data || []); })
+      .catch(err => {
+        if (!cancelled) {
+          setGroupMaterials([]);
+          console.error('Не удалось загрузить материалы группы:', err);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [user, selectedTeacherGroup]);
 
   const handleAddStudentToGroup = async () => {
     if (!selectedTeacherGroup) {
@@ -1275,8 +1335,8 @@ function DashboardPage({ user, setUser }) {
       
       const res = await axios.get('/api/student/homeworks');
       setStudentHomeworks(res.data);
-    } catch {
-      toast.error('Ошибка при отправке задания');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Ошибка при отправке задания');
     }
   };
 
@@ -1324,15 +1384,49 @@ function DashboardPage({ user, setUser }) {
     try {
         await axios.post('/api/homeworks/create', formData);
         setCreateHwMessage('✅ Задание успешно создано и отправлено ученикам!');
-
         setHwTitle('');
         setHwDesc('');
         setHwDeadline('');
         setHwTeacherFile(null);
-        
-        fetchStudents(); 
-    } catch {
-        setCreateHwMessage('❌ Ошибка при создании задания');
+        fetchStudents();
+    } catch (err) {
+        setCreateHwMessage('❌ ' + (err.response?.data?.error || 'Ошибка при создании задания'));
+    }
+  };
+
+  const handleCreateGroupMaterial = async (e) => {
+    e.preventDefault();
+    setMaterialMessage('');
+    if (!selectedTeacherGroup) {
+      setMaterialMessage('❌ Сначала выберите группу.');
+      return;
+    }
+    try {
+      await axios.post(`/api/teacher/groups/${selectedTeacherGroup}/materials`, {
+        title: materialTitle.trim(),
+        url: materialUrl.trim()
+      });
+      const response = await axios.get(`/api/teacher/groups/${selectedTeacherGroup}/materials`);
+      setGroupMaterials(response.data || []);
+      setMaterialTitle('');
+      setMaterialUrl('');
+      setMaterialMessage('✅ Материал добавлен. Ученики этой группы увидят его в своём кабинете.');
+      toast.success('Материал добавлен');
+    } catch (err) {
+      const message = err.response?.data?.error || 'Не удалось добавить материал';
+      setMaterialMessage('❌ ' + message);
+      toast.error(message);
+    }
+  };
+
+  const handleDeleteGroupMaterial = async (materialId) => {
+    if (!selectedTeacherGroup || !window.confirm('Удалить эту запись из списка материалов группы?')) return;
+    try {
+      await axios.delete(`/api/teacher/groups/${selectedTeacherGroup}/materials/${materialId}`);
+      setGroupMaterials(prev => prev.filter(item => Number(item.id) !== Number(materialId)));
+      toast.success('Материал удалён');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Не удалось удалить материал');
     }
   };
 
@@ -1442,6 +1536,39 @@ function DashboardPage({ user, setUser }) {
 
           {linkMessage && <p style={{ marginTop: '10px', color: '#3fb950', fontWeight: 'bold' }}>{linkMessage}</p>}
         </div> {/* ✅ ЗАКРЫВАЕМ БЛОК ССЫЛКИ ЗДЕСЬ */}
+
+        {/* Архив записей и материалов выбранной группы */}
+        <div className="glass-card" style={{ marginBottom: '40px' }}>
+          <h3 style={{ marginTop: 0, color: '#fff' }}>📚 Записи занятий и материалы группы</h3>
+          <p style={{ color: '#8b949e', marginBottom: '15px', fontSize: '14px' }}>
+            Добавьте ссылку на запись в Google Drive или другой материал. Он появится у учеников выбранной группы.
+          </p>
+          <form onSubmit={handleCreateGroupMaterial} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <select className="premium-input" value={selectedTeacherGroup} onChange={e => { setSelectedTeacherGroup(e.target.value); setSelectedGroupLink(e.target.value); setSelectedGroupHw(e.target.value); }} required>
+              {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+            </select>
+            <input className="premium-input" type="text" placeholder="Название, например: Запись занятия 12 октября" value={materialTitle} onChange={e => setMaterialTitle(e.target.value)} required maxLength={160} />
+            <input className="premium-input" type="url" placeholder="Ссылка на Google Drive" value={materialUrl} onChange={e => setMaterialUrl(e.target.value)} required />
+            <button className="btn btn-primary" type="submit" style={{ alignSelf: 'flex-start' }}>Добавить материал</button>
+          </form>
+          {materialMessage && <p style={{ marginTop: '12px', color: materialMessage.includes('✅') ? '#3fb950' : '#ff7b72' }}>{materialMessage}</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '20px' }}>
+            {groupMaterials.length === 0 ? (
+              <p style={{ color: '#8b949e', fontSize: '14px' }}>Материалы этой группы пока не добавлены.</p>
+            ) : groupMaterials.map(material => (
+              <div key={material.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', padding: '12px 14px', borderRadius: '10px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ color: '#fff', display: 'block' }}>{material.title}</strong>
+                  <span style={{ color: '#8b949e', fontSize: '12px' }}>{new Date(material.created_at).toLocaleString('ru-RU')}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <a href={material.url} target="_blank" rel="noreferrer" style={{ color: '#58a6ff', textDecoration: 'none' }}>Открыть запись ↗</a>
+                  <button type="button" className="btn btn-danger" onClick={() => handleDeleteGroupMaterial(material.id)} style={{ padding: '6px 10px', fontSize: '12px' }}>Удалить</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Блок ДЗ */}
         <div className="glass-card" style={{ marginBottom: '40px' }}>
@@ -1660,104 +1787,33 @@ function DashboardPage({ user, setUser }) {
                   ⚡ Проверка посещаемости
                 </button>
                 
-                {teacherAttendance && (
-                  <div
-                    style={{
-                      marginTop: '20px',
-                      paddingTop: '20px',
-                      borderTop:
-                        '1px solid rgba(255,255,255,0.08)'
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: '15px',
-                        flexWrap: 'wrap'
-                      }}
-                    >
+                {teacherAttendances.map(teacherAttendance => (
+                  <div key={teacherAttendance.session.id} style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
                       <div>
-                        <strong style={{ color: '#fff' }}>
-                          📊 {teacherAttendance.session.group_name}
-                        </strong>
-
-                        <div
-                          style={{
-                            marginTop: '6px',
-                            color: '#8b949e',
-                            fontSize: '13px'
-                          }}
-                        >
-                          🟢 Пришли:{' '}
-                          {teacherAttendance.stats.confirmed}
-                          {'  '}
-                          🔴 Пропустят:{' '}
-                          {teacherAttendance.stats.absent}
-                          {'  '}
-                          🟡 Не ответили:{' '}
-                          {teacherAttendance.stats.pending}
+                        <strong style={{ color: '#fff' }}>📊 {teacherAttendance.session.group_name}</strong>
+                        <div style={{ marginTop: '6px', color: '#8b949e', fontSize: '13px' }}>
+                          🟢 Пришли: {teacherAttendance.stats.confirmed}{'  '}🔴 Пропустят: {teacherAttendance.stats.absent}{'  '}🟡 Не ответили: {teacherAttendance.stats.pending}
                         </div>
                       </div>
-
                       {teacherAttendance.session.status === 'active' && (
-                        <button
-                          type="button"
-                          onClick={handleCloseAttendance}
-                          className="btn btn-danger"
-                        >
-                          Завершить опрос
+                        <button type="button" onClick={() => handleCloseAttendance(teacherAttendance.session.id)} className="btn btn-danger">
+                          Завершить этот опрос
                         </button>
                       )}
                     </div>
-
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                        marginTop: '15px'
-                      }}
-                    >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '15px' }}>
                       {teacherAttendance.students.map(student => (
-                        <div
-                          key={student.student_id}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            gap: '10px',
-                            padding: '9px 12px',
-                            borderRadius: '8px',
-                            background:
-                              'rgba(255,255,255,0.025)'
-                          }}
-                        >
-                          <span style={{ color: '#fff' }}>
-                            {student.first_name}
-                          </span>
-
-                          <span
-                            style={{
-                              color:
-                                student.status === 'confirmed'
-                                  ? '#3fb950'
-                                  : student.status === 'absent'
-                                  ? '#ff7b72'
-                                  : '#d29922'
-                            }}
-                          >
-                            {student.status === 'confirmed'
-                              ? '✅ Будет'
-                              : student.status === 'absent'
-                              ? `❌ ${student.reason || 'Нет'}`
-                              : '⏳ Не ответил'}
+                        <div key={student.student_id} style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', padding: '9px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.025)' }}>
+                          <span style={{ color: '#fff' }}>{student.first_name}</span>
+                          <span style={{ color: student.status === 'confirmed' ? '#3fb950' : student.status === 'absent' ? '#ff7b72' : '#d29922' }}>
+                            {student.status === 'confirmed' ? '✅ Будет' : student.status === 'absent' ? `❌ ${student.reason || 'Нет'}` : '⏳ Не ответил'}
                           </span>
                         </div>
                       ))}
                     </div>
                   </div>
-                )}
+                ))}
 
               </div>
 
@@ -2424,6 +2480,25 @@ function DashboardPage({ user, setUser }) {
         </div>
       </div>
 
+      {/* Записи занятий и материалы из всех учебных групп ученика */}
+      <div className="glass-card" style={{ marginBottom: '30px' }}>
+        <h3 style={{ margin: '0 0 16px 0', color: '#fff' }}>📚 Записи занятий и материалы</h3>
+        {studentMaterials.length === 0 ? (
+          <p style={{ color: '#8b949e', fontSize: '14px' }}>Материалы пока не добавлены.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {studentMaterials.map(material => (
+              <div key={material.id} style={{ padding: '14px', borderRadius: '10px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div style={{ color: '#d29922', fontSize: '12px', marginBottom: '5px' }}>{material.group_name}</div>
+                <strong style={{ display: 'block', color: '#fff', marginBottom: '5px' }}>{material.title}</strong>
+                <div style={{ color: '#8b949e', fontSize: '12px', marginBottom: '10px' }}>{new Date(material.created_at).toLocaleString('ru-RU')}</div>
+                <a href={material.url} target="_blank" rel="noreferrer" className="btn btn-primary" style={{ display: 'inline-block', padding: '8px 14px', fontSize: '13px' }}>Открыть материал ↗</a>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Привязка телеграма (показываем, если нет telegram_id) */}
       {!user.telegram_id && (
         <div className="glass-card" style={{ marginBottom: '30px', textAlign: 'center', border: '1px solid rgba(88, 166, 255, 0.3)' }}>
@@ -2464,7 +2539,7 @@ function DashboardPage({ user, setUser }) {
                         <p style={{ margin: '0 0 15px 0', color: '#c9d1d9', fontSize: '14px', lineHeight: '1.5' }}>{hw.description}</p>
                         
                         {hw.teacher_file && (
-                            <a href={`http://${hw.teacher_file}`} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: '15px', color: '#d29922', textDecoration: 'none', fontSize: '14px' }}>
+                            <a href={hw.teacher_file} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: '15px', color: '#d29922', textDecoration: 'none', fontSize: '14px' }}>
                                 📎 Скачать прикрепленный файл задания
                             </a>
                         )}
